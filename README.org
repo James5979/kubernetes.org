@@ -568,7 +568,7 @@ Always use Kubernetes services to connect to Pods since Pod domain names are tra
 
 *Note*: the domain name resolution service for Pods is disbaled by default, although it can be enabled by passing the ~pods insecure~ flag to the =Corefile= used by CoreDNS:
 
-#+begin_src json
+#+begin_src
 .:53 {
     errors
     health {
@@ -593,7 +593,7 @@ Always use Kubernetes services to connect to Pods since Pod domain names are tra
 
 The root name for a cluster (i.e. the cluster name) is configured within the Corefile (see =cluster.local= below):
 
-#+begin_src json
+#+begin_src
 .:53 {
     errors
     health {
@@ -2703,7 +2703,7 @@ Alternatively, expose the web interface to the internet using an =Ingress= rule.
 
 *Warning*: exposing ZNC directly on the internet will increase its attack surface.
 
-* TODO Maintenance
+* Maintenance
 
 Prepare Kubernetes nodes for maintenance.
 
