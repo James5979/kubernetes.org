@@ -1,0 +1,4683 @@
+#+title: Kubernetes
+#+property: header-args :eval never-export :results output silent
+#+startup: overview
+
+My collection of Kubernetes notes.
+
+* Pods
+
+A =Pod= is the smallest unit of compute in a Kubernetes cluster.
+
+Each Pod consists of one or more containers and are defined using metadata and a Pod spec.
+
+** Create a Pod
+
+Imperative command:
+
+#+begin_src shell
+kubectl run $NAME --image=$IMAGE --labels=$LABELS --namespace=$NAMESPACE
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+#+end_src
+
+Show resource output for a Pod:
+
+#+begin_src shell
+kubectl get pods/$NAME --namespace=$NAMESPACE
+#+end_src
+
+* Image pull policy
+
+If you wish to deploy a Kubernetes application using cached images on a node ensure that the =imagePullPolicy= is set to either =Never= or =IfNotPresent=.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+#+end_src
+
+* ReplicationControllers
+
+A =ReplicationController= is responsible for keeping the total number of replicas constant.
+
+Each replica is defined using a Pod template under the =template= section.
+
+** Create a ReplicationController
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: docker.io/library/nginx:1.25.5
+        imagePullPolicy: IfNotPresent
+#+end_src
+
+Show resource output for a ReplicationController:
+
+#+begin_src shell
+kubectl get replicationcontroller/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Show all objects created by a ReplicationController (using a selector):
+
+#+begin_src shell
+kubectl get all --namespace=$NAMESPACE --selector=$LABELS
+#+end_src
+
+* ReplicaSets
+
+A =ReplicaSet= ensures that there is always a stable number of Pods based on the total number of replicas.
+
+ReplicaSets are similar to ReplicationControllers with the exception that a ReplicaSet uses a =selector= to track Pod replicas.
+
+** Create a ReplicaSet
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: docker.io/library/nginx:1.25.5
+        imagePullPolicy: IfNotPresent
+#+end_src
+
+Show resource output for a ReplicaSet:
+
+#+begin_src shell
+kubectl get replicasets.apps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Show all objects created by a ReplicaSet (using a selector):
+
+#+begin_src shell
+kubectl get all --namespace=$NAMESPACE --selector=$LABELS
+#+end_src
+
+* Deployments
+
+A =Deployment= provides declaritive updates to Pods (using ReplicaSets) with the ability to rollback when required with zero downtime when using the =rolling update= strategy.
+
+** Create a Deployment
+
+Imperative command:
+
+#+begin_src shell
+kubectl create deployment $NAME --image=$IMAGE --namespace=$NAMESPACE --replicas=3
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: docker.io/library/nginx:1.25.5
+        imagePullPolicy: IfNotPresent
+#+end_src
+
+Show resource output for a Deployment:
+
+#+begin_src shell
+kubectl get deployments.apps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Show all objects created by a Deployment (using a selector):
+
+#+begin_src shell
+kubectl get all --namespace=$NAMESPACE --selector=$LABELS
+#+end_src
+
+Update a container image for a Deployment (using an imperative command):
+
+#+begin_src shell
+kubectl set image deployments.apps/$NAME $CONTAINER=$IMAGE:$TAG
+#+end_src
+
+* Scaling
+
+Scale the number replicas for a resource (using an imperative command):
+
+#+begin_src shell
+kubectl scale --filename=$FILE --namespace=$NAMESPACE --replicas=$NUMBER
+#+end_src
+
+*Note*: the ~kubectl scale~ command will not update any file supplied using the =--filename= option.
+
+** Scale a Deployment
+
+Imperative command:
+
+#+begin_src shell
+kubectl scale --replicas=$NUMBER deployments.apps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Alternatively, update the number of replicas using a manifest and apply the changes:
+
+#+begin_src shell
+kubectl apply --filename=$FILE
+#+end_src
+
+* Ports
+
+Kubernetes service ports:
+
+|------------+---------------------|
+| Port       | Description         |
+|------------+---------------------|
+| targetPort | Port on the pod     |
+| port       | Port on the service |
+| nodePort   | Port on the node    |
+|------------+---------------------|
+
+The ports (above) are networked as follows:
+
+#+begin_src text
+[(LAN <--> nodePort) | (client-pod <--> port)] <--> service <--> targetPort <--> pod
+#+end_src
+
+* NodePort service
+
+A =NodePort= service provides external access to Kubernetes applications by creating a port listening on each node in the cluster. This means that you can connect to a service using the IP address of a worker node.
+
+*Note*: NodePort can only listen on ports =30000= to =32767=.
+
+** Create a NodePort service
+
+Imperative command:
+
+#+begin_src shell
+kubectl create service nodeport $NAME --namespace=$NAMESPACE --node-port=$NODEPORT --tcp=$PORT:$TARGETPORT
+#+end_src
+
+*Note*: the selector field for a service should be updated manually since the command above does not expose any particular application. Use the ~kubectl expose~ command instead if you wish to have the selector field set to the correct value automatically.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - name: http
+    nodePort: 30080
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  type: NodePort
+#+end_src
+
+Show resource output for a NodePort service:
+
+#+begin_src shell
+kubectl get services/$NAME --namespace=$NAMESPACE
+#+end_src
+
+* ClusterIP service
+
+Since IP addresses for Pods are transient, =ClusterIP= allows pods to communicate internally by providing a fixed IP address.
+
+** Create a ClusterIP service
+
+Imperative command:
+
+#+begin_src shell
+kubectl create service clusterip $NAME --namespace=$NAMESPACE --tcp=$PORT:$TARGETPORT
+#+end_src
+
+*Note*: the selector field for a service should be updated manually since the command above does not expose any particular application. Use the ~kubectl expose~ command instead if you wish to have the selector field set to the correct value automatically.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  type: ClusterIP
+#+end_src
+
+Show resource output for a ClusterIP service:
+
+#+begin_src shell
+kubectl get services/$NAME --namespace=$NAMESPACE
+#+end_src
+
+* Exposing
+
+Expose Kubernetes objects to services.
+
+Imperative command:
+
+#+begin_src shell
+kubectl expose $RESOURCE/$NAME --name=$SERVICE_NAME --namespace=$NAMESPACE --port=$PORT --protocol=TCP --selector=$LABELS --target-port=$PORT --type=$SERVICE_TYPE
+#+end_src
+
+*Note*: the ~kubectl expose~ command will *not* generate the =nodePort= field automatically whereas the ~kubectl create~ command will. Another difference between these commands is that exposing an application requires the application to exist, whereas the =create= command does not require any pre-existing Kubernetes objects.
+
+You can also use the ~--expose~ option with the ~kubectl run~ command when you need to expose a single Pod:
+
+#+begin_src shell
+kubectl run $NAME --expose --image=$IMAGE --labels=$LABELS --namespace=$NAMESPACE --port=$PORT
+#+end_src
+
+* LoadBalancer service
+
+A =LoadBalancer= service is similar to a NodePort service except that it is predominantly used in conjunction with public cloud and enables external load balancing in front of a service.
+
+*Example*: see [[https://www.civo.com/learn/managing-external-load-balancers-on-civo][LoadBalancers]] offered by [[https://civo.com/][Civo]] - the ethical public cloud provider.
+
+*Note*: a service LoadBalancer should *not* be mistaken for the internal load balancing that takes place in ReplicaSet.
+
+** Create a LoadBalancer service
+
+Imperative command:
+
+#+begin_src shell
+kubectl create service loadbalancer $NAME --namespace=$NAMESPACE --tcp=$PORT:$TARGETPORT
+#+end_src
+
+*Note*: the selector field for a service created using this command should be updated manually as the command does not expose any particular application. Use the ~kubectl expose~ command instead if you wish to have the selector field set to the correct value automatically.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: znc
+  namespace: irc
+  labels:
+    app: znc
+  annotations:
+    kubernetes.civo.com/firewall-id: 0aa9fbc9-79e7-4a49-b2de-f44ecb1d776b
+    kubernetes.civo.com/ipv4-address: "12.34.56.78"
+    kubernetes.civo.com/loadbalancer-algorithm: least_connections
+spec:
+  selector:
+    app: znc
+  ports:
+  - name: ircs-u
+    port: 6697
+    protocol: TCP
+    targetPort: 6697
+  type: LoadBalancer
+#+end_src
+
+The Kubernetes LoadBalancer service uses metadata annotations to provide extra configuration to the external load balancer, e.g. see the annotations used above to configure the [[https://www.civo.com/docs/kubernetes/load-balancers][Civo]] LoadBalancer.
+
+Show resource output for a LoadBalancer service:
+
+#+begin_src shell
+kubectl get services/$NAME --namespace=$NAMESPACE
+#+end_src
+
+* External services
+
+Communicate with external applications through Kubernetes.
+
+Print the IP address of an external application running on Linux, e.g. a backup server:
+
+#+begin_src shell
+ip -4 --brief address show dev $INTERFACE | awk '{ print $3 }' | sed --expression 's/\/24//')
+#+end_src
+
+If multiple interfaces exist, pick the interface that corresponds to the IP address associated with the hostname of the host running the application:
+
+#+begin_src shell
+host $HOSTNAME
+#+end_src
+
+Define the Endpoints used by a service that communicates with an external application:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-app-svc
+  namespace: $NAMESPACE
+spec:
+  ports:
+  - port: $PORT
+    protocol: TCP
+    targetPort: $PORT
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  # Match the Endpoints to the service:
+  name: external-app-svc
+  namespace: $NAMESPACE
+subsets:
+- addresses:
+  - ip: $EXTERNAL_IP
+  ports:
+  - port: $PORT
+    protocol: TCP
+EOF
+#+end_src
+
+Show resource output for Kubernetes endpoints:
+
+#+begin_src shell
+kubectl get endpoints --namespace=$NAMESPACE
+#+end_src
+
+Test that the external application is reachable from within Kubernetes:
+
+#+begin_src shell
+kubectl run $POD --image=busybox --restart=Never --rm --stdin --tty -- nc -v -w 5 -z external-app-svc.$NAMESPACE $PORT
+#+end_src
+
+Curl the service:
+
+#+begin_src shell
+kubectl run curl --image=curlimages/curl --restart=Never --rm --stdin -- curl $SERVICE:$PORT
+#+end_src
+
+* Documentation
+
+View documentation for a resource using the ~kubectl explain~ command.
+
+** Example
+
+Show documentation for a =ReplicaSet=:
+
+#+begin_src shell
+kubectl explain ReplicaSet
+#+end_src
+
+Show documentation on the spec of a =ReplicaSet=:
+
+#+begin_src shell
+kubectl explain ReplicaSet.spec
+#+end_src
+
+Optionally, display output using nested fields:
+
+#+begin_src shell
+kubectl explain ReplicaSet.spec --recursive
+#+end_src
+
+* Namespaces
+
+A =Namespace= is a mechanism used to isolate groups of resources within a cluster.
+
+** Create a Namespace
+
+Imperative command:
+
+#+begin_src shell
+kubectl create namespace $NAME
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+#+end_src
+
+Show resource output for a Namespace:
+
+#+begin_src shell
+kubectl get namespaces/$NAME
+#+end_src
+
+Change the current Namespace:
+
+#+begin_src shell
+kubectl config set-context --current --namespace=$NAME
+#+end_src
+
+View contexts to identify the current Namespace:
+
+#+begin_src shell
+kubectl config get-contexts
+#+end_src
+
+* Kubernetes DNS
+
+Kubernetes uses a built-in DNS server called =CoreDNS= that allows applications to connect to each other using domain names.
+
+To use the Fully Qualified Domain Name (FQDN) for a Kubernetes service, specify the domain using the form:
+
+#+begin_src text
+<service-name>.<namespace>.svc.<cluster-name>
+#+end_src
+
+When connecting to a service in the same Namespace, use the service name as the domain name:
+
+#+begin_src text
+<service-name>
+#+end_src
+
+To connect to a service in a different Namespace you should specify the FQDN for the service, or use its =short name=:
+
+#+begin_src text
+<service-name>.<namespace>
+#+end_src
+
+*Note*: CoreDNS only supports fully qualified domain names for Pods since there are no search lists for Pod short names.
+
+Specify the FQDN of a Pod:
+
+#+begin_src text
+<pod-name>.<namespace>.pod.<cluster-name>
+#+end_src
+
+Always use Kubernetes services to connect to Pods since Pod domain names are transient and may not persist throughout the full lifecycle of an application.
+
+*Note*: the domain name resolution service for Pods is disbaled by default, although it can be enabled by passing the ~pods insecure~ flag to the =Corefile= used by CoreDNS:
+
+#+begin_src json
+.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+        ttl 30
+    }
+    prometheus :9153
+    forward . /etc/resolv.conf {
+        max_concurrent 1000
+    }
+    cache 30
+    loop
+    reload
+    loadbalance
+}
+#+end_src
+
+The root name for a cluster (i.e. the cluster name) is configured within the Corefile (see =cluster.local= below):
+
+#+begin_src json
+.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+        ttl 30
+    }
+    prometheus :9153
+    forward . /etc/resolv.conf {
+        max_concurrent 1000
+    }
+    cache 30
+    loop
+    reload
+    loadbalance
+}
+#+end_src
+
+*Note*: Kubernetes stores the Corefile using a ConfigMap called =coredns=.
+
+View the configuration for =coredns=:
+
+#+begin_src shell
+kubectl get configmaps/coredns --namespace=kube-system --output=yaml
+#+end_src
+
+Alternatively, find the cluster name using the ConfigMap named =kubeadm-config=:
+
+#+begin_src shell
+kubectl get configmaps/kubeadm-config --namespace=kube-system --output=jsonpath='{.data.ClusterConfiguration}' | awk '/dnsDomain/ { print $2}'
+#+end_src
+
+** Example FQDNs
+
+|-----------------+--------------------------------------|
+| Resource Object | Fully Qualified Domain Name          |
+|-----------------+--------------------------------------|
+| Pod             | 10-96-0-10.default.pod.cluster.local |
+| Service         | nginx.default.svc.cluster.local      |
+|-----------------+--------------------------------------|
+
+** Testing DNS
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: utilities
+  namespace: default
+  labels:
+    utils: dns
+spec:
+  template:
+    metadata:
+      labels:
+        utils: dns
+    spec:
+      imagePullSecrets:
+      - name: regcred
+      containers:
+      - name: utilities
+        image: ghcr.io/james5979/utilities:v0.5.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - "host"
+        args:
+        - "nginx.test"
+      restartPolicy: Never
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test
+  labels:
+    utils: dns
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: test
+  labels:
+    app: nginx
+    utils: dns
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+    ports:
+    - name: http
+      containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: test
+  labels:
+    app: nginx
+    utils: dns
+spec:
+  selector:
+    app: nginx
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+#+end_src
+
+You can build a =utilities= image using the following =Dockerfile=:
+
+#+begin_src dockerfile
+# COPYRIGHT (C) 2023 James Hilling
+# LICENCE: GPL-3.0-or-later
+
+FROM docker.io/library/debian:stable-20240110-slim
+
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG UTILITIES_UID=117
+ARG UTILITIES_GID=117
+
+RUN apt-get update && \
+    apt-get --assume-yes --no-install-recommends install \
+    bash-completion \
+    bind9-dnsutils \
+    bind9-host \
+    coreutils \
+    curl \
+    iproute2 \
+    iputils-ping \
+    mtr-tiny \
+    netcat-openbsd \
+    net-tools \
+    nmap \
+    procps \
+    traceroute && \
+    mkdir --parents /var/utilities && \
+    chown $UTILITIES_UID:$UTILITIES_GID /var/utilities && \
+    useradd \
+    --comment="utilities" \
+    --home-dir=/var/utilities \
+    --no-create-home \
+    --shell=/usr/sbin/nologin \
+    --uid=$UTILITIES_UID \
+    --system \
+    utilities
+
+WORKDIR /var/utilities
+USER utilities:utilities
+
+ENTRYPOINT ["sleep"]
+CMD ["3600"]
+#+end_src
+
+*Note*: if hosting an image using a private container registry, create a Kubernetes Secret using the registry credentials, then specify the =imagePullSecrets= field under the Pod =spec= to authenticate and pull container images.
+
+Verify that the domain =nginx.test= is resolvable:
+
+#+begin_src shell
+echo -n "Output: " && kubectl logs pods/$UTILITIES_POD --namespace=default
+#+end_src
+
+Output: =nginx.test.svc.cluster.local has address 10.43.204.93=
+
+Noice! 👍
+
+* Word count
+
+Count the total number of objects for a resource using the ~--no-headers~ option and piping the output through line count:
+
+#+begin_src shell
+kubectl get $RESOURCE --namespace=$NAMESPACE --no-headers | wc --lines
+#+end_src
+
+* Create
+
+Create a new set of Kubernetes objects using a manifest file:
+
+#+begin_src shell
+kubectl create --filename $FILE
+#+end_src
+
+* Edit
+
+Edit existing Kubernetes objects:
+
+#+begin_src shell
+kubectl edit $RESOURCE/$NAME --namespace=$NAMESPACE
+#+end_src
+
+The ~kubectl edit~ command is discouraged in production environments, since there exists no way to track changes made to the cluster. A change should always have a review process, so changes to Kubernetes objects should go through revision control. Approved changes can then be deployed using GitOps, or done manually.
+
+* Replace
+
+Replace existing Kubernetes objects using a manifest file:
+
+#+begin_src shell
+kubectl replace --filename $FILE
+#+end_src
+
+Forcefully replace existing Kubernetes objects using a manifest file:
+
+#+begin_src shell
+kubectl replace --filename $FILE --force
+#+end_src
+
+* Apply
+
+Apply a Kubernetes manifest to the cluster and retain the previous state of the modified object:
+
+#+begin_src shell
+kubectl apply --filename $FILE
+#+end_src
+
+* Manual scheduling
+
+Ignore the scheduler completely and manually assign a Pod to a node using the =nodeName= field.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+  nodeName: lab-cluster-worker2
+#+end_src
+
+* Custom columns
+
+Customise table output with custom columns and JSONPath syntax:
+
+Example command:
+
+#+begin_src shell
+kubectl get pods --namespace=$NAMESPACE --output=custom-columns=NAME:metadata.name,IP:status.podIP,NODE:spec.nodeName
+#+end_src
+
+Custom table output:
+
+|------------------------+-------------+---------------------|
+| NAME                   |          IP | NODE                |
+|------------------------+-------------+---------------------|
+| nginx-5ccbbcf759-28tlk | 10.244.1.18 | lab-cluster-worker2 |
+| nginx-5ccbbcf759-29dz5 | 10.244.2.11 | lab-cluster-worker  |
+| nginx-5ccbbcf759-w5k65 | 10.244.2.12 | lab-cluster-worker  |
+|------------------------+-------------+---------------------|
+
+* Selectors
+
+Identify sets of Kubernetes objects using selectors.
+
+Show output for matching labels:
+
+#+begin_src shell
+kubectl get pods --selector=$LABEL1,$LABEL2,$LABEL3
+#+end_src
+
+*Note*: the comma separated syntax above represent a series of *AND* statements.
+
+Count the total number of objects that match a certain label:
+
+#+begin_src shell
+kubectl get all --no-headers --selector=$LABEL | wc --lines
+#+end_src
+
+* Taints
+
+Repel Pods during scheduling using =Taints=.
+
+Taint a node and mark it as =NoSchedule=:
+
+#+begin_src shell
+kubectl taint nodes $NODE $LABEL:NoSchedule
+#+end_src
+
+Add multiple taints to a node:
+
+#+begin_src shell
+kubectl taint nodes $NODE $LABEL1:NoSchedule $LABEL2:NoSchedule
+#+end_src
+
+Taint a node and prefer not to schedule any Pods:
+
+#+begin_src shell
+kubectl taint nodes $NODE $LABEL:PreferNoSchedule
+#+end_src
+
+Taint a node and evict Pods that do *not* have a toleration:
+
+#+begin_src shell
+kubectl taint nodes $NODE $LABEL:NoExecute
+#+end_src
+
+View all taints that exist on a node:
+
+#+begin_src shell
+kubectl describe nodes/$NODE | grep Taints
+#+end_src
+
+Remove a taint from a node:
+
+#+begin_src shell
+kubectl taint nodes $NODE $LABEL:NoSchedule-
+#+end_src
+
+* Tolerations
+
+Allow scheduling Pods on tainted nodes using =Tolerations=.
+
+** Add tolerations to a Pod
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+  tolerations:
+  - key: "app"
+    operator: "Equal"
+    value: "nginx"
+    effect: "NoSchedule"
+  - key: "gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+#+end_src
+
+Toleration operators:
+
+|----------+------------------------------------|
+| Operator | Description                        |
+|----------+------------------------------------|
+| Equal    | Keys must match                    |
+| Exists   | Must have matching key-value pairs |
+|----------+------------------------------------|
+
+*Note*: a toleration does *not* guarantee that a Pod will be scheduled on a node with a particular taint, it only permits that the Pod can be scheduled on the node with the taint.
+
+*Tip*: tolerations require that you reference the [[https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/][kubernetes.io]] documentation since no imperative command exists, but the YAML for a taint is very similar to the YAML for a toleration (albeit missing the operator field):
+
+#+begin_src shell
+kubectl get nodes/$NAME --output=jsonpath='{.spec.taints[*]}' | yq --colors --output-format=yaml --prettyPrint
+#+end_src
+
+* Labels
+
+Labels are key-value pairs associated with Kubernetes objects. They allow the classification of objects, e.g. for defining organisation structure, unique hardware, topology, business units, etc.
+
+List all labels associated with an object:
+
+#+begin_src shell
+kubectl label $RESOURCE/$OBJECT --list
+#+end_src
+
+List all labels associated with an object using the ~kubectl get~ command:
+
+#+begin_src shell
+kubectl get $RESOURCE/$NAME --show-labels
+#+end_src
+
+Count the total number of labels for an object:
+
+#+begin_src shell
+kubectl label $RESOURCE/$OBJECT --list | wc --lines
+#+end_src
+
+Add labels to an object:
+
+#+begin_src shell
+kubectl label $RESOURCE/$NAME $LABEL1 $LABEL2
+#+end_src
+
+Remove labels from an object:
+
+#+begin_src shell
+kubectl label --overwrite $RESOURCE/$NAME ${KEY1}- ${KEY2}-
+#+end_src
+
+* nodeSelector
+
+Schedule workloads on a specific nodes.
+
+*Prerequisite*: label any node that contains hardware used for special workloads, i.e. applications requiring access to NVIDIA GPUs, certain amounts of CPU, etc.
+
+Schedule a Pod on a particular node (or set of nodes) using a =nodeSelector=.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+  nodeSelector:
+    compute: small
+#+end_src
+
+* nodeAffinity
+
+Node affinity affects what nodes a Pod can be scheduled on by utilising a mixture of node labels and operator logic.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: compute
+            operator: In
+            values:
+            - medium
+            - small
+          - key: gpu
+            operator: Exists
+          - key: gpu
+            operator: NotIn
+            values:
+            - amd
+          - key: quantum
+            operator: DoesNotExist
+#+end_src
+
+*Tip*: node affinity requires that you reference the [[https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/][kubernetes.io]] documentation, since no imperative command exists. You can always use the =kubectl explain= command to infer what fields you should use.
+
+*Note*: taints and tolerations can be used in combination with node affinity to ensure that specific workloads are only schedulable on certain nodes.
+
+* podAntiAffinity
+
+Restrict scheduling to a single Pod per node per application (when preferable), similar to a DaemonSet but using a Deployment:
+
+Example manifets:
+
+#+begin_src yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            podAffinityTerm:
+              topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - test-deployment
+      containers:
+      - image: nginx
+        name: nginx
+#+end_src
+
+Restrict scheduling to one Pod per node per application (no exceptions):
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: "kubernetes.io/hostname"
+            labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - nginx
+      containers:
+      - image: nginx
+        name: nginx
+#+end_src
+
+* ResourceQuotas
+
+Limit aggregate resource consumption per Namespace.
+
+** Create a Namespace-scoped ResourceQuota
+
+Imperative command:
+
+#+begin_src shell
+kubectl create quota $NAME --hard=persistentvolumeclaims=10,pods=10,replicationcontrollers=2,resourcequotas=2,secrets=10,services=2,limits.cpu=500m,limits.memory=2048Mi,requests.cpu=250m,requests.memory=1024Mi --namespace=$NAMESPACE
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dev-quota
+  namespace: dev
+spec:
+  hard:
+    persistentvolumeclaims: "10"
+    pods: "10"
+    replicationcontrollers: "2"
+    resourcequotas: "2"
+    secrets: "10"
+    services: "2"
+    limits.cpu: 500m
+    limits.memory: 2Gi
+    requests.cpu: 250m
+    requests.memory: 1Gi
+#+end_src
+
+*Note*: creating a ResourceQuota forces a Pod to specify its resource requirements. If no resource requirements have been set and no defaults exist then the Pod will not be scheduled.
+
+Show resource output for a ResourceQuota:
+
+#+begin_src shell
+kubectl get resourcequotas
+#+end_src
+
+Describe a ResourceQuota:
+
+#+begin_src shell
+kubectl describe resourcequotas/$NAME --namespace=$NAMESPACE
+#+end_src
+
+** Define resource requirements for a Pod
+
+Imperative command:
+
+#+begin_src shell
+kubectl run $NAME --limits=cpu=250m,memory=256Mi --namespace=$NAMESPACE --requests=cpu=100m,memory=128Mi
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: dev
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    command:
+    - "/bin/sh"
+    args:
+    - "-c"
+    - |-
+      while true;
+      do
+        sleep 3600;
+      done
+    resources:
+      limits:
+        cpu: 250m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+#+end_src
+
+* Default resource limits and requests
+
+When a Pod exceeds its CPU limit it gets throttled. When a Pod exceeds its memory limit it gets terminated (dependant on the rate).
+
+The default limits and requests for a Pod are used when no resource requirements have been defined within the spec. In circumstances when no limits have been set and a CPU and memory ResouceQuota is in effect the Pod will fail to run and you will receive an error. By setting the default limits you can mitigate this issue and stop such occurrences. When a Pod is missing either its CPU or memory limits it will receive the corresponding default values for the Namespace.
+
+*Note*: whenever a CPU or memory request has been left undefined and the corresponding resource limits have been set, resource requests are automatically set to the same values as the resource limits.
+
+** Create default limits and requests
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: cpu-limit-range
+spec:
+  limits:
+  - default:
+      cpu: 1
+    defaultRequest:
+      cpu: 0.5
+    type: Container
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: memory-limit-range
+spec:
+  limits:
+  - default:
+      memory: 512Mi
+    defaultRequest:
+      memory: 256Mi
+    type: Container
+#+end_src
+
+*Tip*: LimitRanges require that you reference the [[https://kubernetes.io/docs/tasks/administer-cluster/manage-resources/cpu-default-namespace/][kubernetes.io]] documentation, since no imperative command exists. You can always use the ~kubectl explain~ command to infer what fields you should use.
+
+Show resource output for a LimitRange:
+
+#+begin_src shell
+kubectl get limitranges/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Describe a LimitRange:
+
+#+begin_src shell
+kubectl describe limitranges/$NAME --namespace=$NAMESPACE
+#+end_src
+
+* CrashLoopBackOff
+
+Always investigate why a container is in a =CrashLoopBackOff= state.
+
+** Example
+
+View the container =state= and the reason for this using the ~kubectl describe~ command:
+
+#+begin_src text
+containers:
+  nginx:
+  ...
+  state:          Terminated
+    Reason:       OOMKilled
+#+end_src
+
+Notice how the container was terminated since it exceeded its memory limits.
+
+* DaemonSets
+
+Ensure that all nodes in a cluster are running a copy of a Pod through a =DaemonSet=.
+
+** Create a DaemonSet
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: mydaemon
+  namespace: default
+  labels:
+    daemon: mydaemon
+spec:
+  selector:
+    matchLabels:
+      daemon: mydaemon
+  template:
+    metadata:
+      labels:
+        daemon: mydaemon
+    spec:
+      containers:
+      - name: mydaemon
+        image: docker.io/library/busybox:1.36
+        imagePullPolicy: IfNotPresent
+        command:
+        - "/bin/sh"
+        args:
+        - "-c"
+        - |-
+          while true;
+          do
+            echo 'I am a daemon doing daemonic things';
+            sleep 3600;
+          done
+#+end_src
+
+Show resource output for a DaemonSet:
+
+#+begin_src shell
+kubectl get daemonset/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Show all objects created by a DaemonSet (using a selector):
+
+#+begin_src shell
+kubectl get all --namespace=$NAMESPACE --selector=$LABELS
+#+end_src
+
+* Static Pods
+
+Pods created independent from the API server are known as =Static Pods=. Static Pods are created by placing manifest files in a special directory on the host (monitored by the kubelet). This directory is known as the Static Pod path.
+
+The =staticPodPath= is defined as part of the configuration of the kubelet, its location is shown in the running process:
+
+#+begin_src shell
+echo -n "Kubelet configuration file: " && ps -ef | grep --extended-regexp '/usr/bin/kubelet' | grep --only-matching "\-\-config=.*.yaml" | sed --expression "s/--config=//"
+#+end_src
+
+#+results:
+: Kubelet configuration file: /var/lib/kubelet/config.yaml
+
+Find the value of the =staticPodPath=:
+
+#+begin_src shell
+echo -n "Static Pod path: " && awk '/staticPodPath/ { print $2 }' /var/lib/kubelet/config.yaml
+#+end_src
+
+#+results:
+: Static Pod path: /etc/kubernetes/manifests
+
+*Note*: sometimes the =staticPodPath= is defined using the command line argument =--pod-manifest-path=. You should check whether this option exists in the running process.
+
+*Note*: the Kubernetes API server is aware of Static Pods, although it does not manage them in any way. When viewing a Static Pod object using the Kubernetes API (i.e. using ~kubectl~) Static Pods will appear as normal pods with the hostname of the parent node appended to the end of their name.
+
+List all Static Pods:
+
+#+begin_src shell
+kubectl get pods --all-namespaces --output=jsonpath='{"NAME"}{"\n"}{range.items[?(@.metadata.ownerReferences[*].kind == "Node")]}{.metadata.name}{"\n"}{end}'
+#+end_src
+
+** Create a Static Pod
+
+Imperative command:
+
+#+begin_src shell
+kubectl run $NAME --dry-run=client --image=$IMAGE --namespace=$NAMESPACE --output=yaml --selector=$LABELS -- $ARGUMENTS > $STATIC_POD_PATH/$NAME.yaml
+#+end_src
+
+* Events
+
+Show the most recent =Events= for a cluster.
+
+Show resource output for Events:
+
+#+begin_src shell
+kubectl get events --all-namespaces --output=wide
+#+end_src
+
+*Tip*: use the ~--output=wide~ option to list scheduling information.
+
+* Multiple schedulers
+
+Create a custom scheduler.
+
+** Create a ServiceAccount for the custom scheduler
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: custom-scheduler
+  namespace: kube-system
+  labels:
+    scheduler: custom
+#+end_src
+
+** Create a pair of ClusterRoleBindings
+
+Create a ClusterRoleBinding for the ServiceAccount specifying =system:kube-scheduler= as the role.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: custom-scheduler
+  labels:
+    scheduler: custom
+roleRef:
+  kind: ClusterRole
+  name: system:kube-scheduler
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: custom-scheduler
+  namespace: kube-system
+#+end_src
+
+Create another ClusterRoleBinding for the ServiceAccount specifying =system:volume-scheduler= as the role.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: custom-volume-scheduler
+  labels:
+    scheduler: custom
+roleRef:
+  kind: ClusterRole
+  name: system:volume-scheduler
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: custom-scheduler
+  namespace: kube-system
+#+end_src
+
+** Create a ConfigMap containing the custom scheduler configuration
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-scheduler
+  namespace: kube-system
+  labels:
+    scheduler: custom
+data:
+  custom-scheduler-config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1
+    kind: KubeSchedulerConfiguration
+    profiles:
+    - schedulerName: custom-scheduler
+    leaderElection:
+      leaderElect: false
+#+end_src
+
+** Create a custom scheduler
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: custom-scheduler
+  namespace: kube-system
+  labels:
+    scheduler: custom
+spec:
+  containers:
+  - name: custom-scheduler
+    image: registry.k8s.io/kube-scheduler:v1.28.2
+    imagePullPolicy: IfNotPresent
+    command:
+    - "/usr/local/bin/kube-scheduler"
+    args:
+    - "--config=/etc/kubernetes/custom-scheduler/custom-scheduler-config.yaml"
+    securityContext:
+      privileged: false
+    resources:
+      requests:
+        cpu: "0.1"
+    volumeMounts:
+    - name: custom-scheduler
+      mountPath: /etc/kubernetes/custom-scheduler
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 10259
+        scheme: HTTPS
+      initialDelaySeconds: 15
+    readinessProbe:
+      httpGet:
+        path: /healthz
+        port: 10259
+        scheme: HTTPS
+  nodeName: control-plane
+  serviceAccountName: custom-scheduler
+  hostNetwork: false
+  hostPID: false
+  volumes:
+  - name: custom-scheduler
+    configMap:
+      name: custom-scheduler
+#+end_src
+
+** List the custom scheduler using a selector
+
+Show resource output for all =custom-scheduler= objects:
+
+#+begin_src shell
+kubectl get sa,clusterrolebinding,cm,po --namespace=kube-system --output=wide --selector=scheduler=custom
+#+end_src
+
+** Test the custom scheduler
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+    scheduler: custom
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+  schedulerName: custom-scheduler
+#+end_src
+
+Verify that the Pod was scheduled using the =custom-scheduler=:
+
+#+begin_src shell
+kubectl describe pods/$NAME --namespace=$NAMESPACE | grep --extended-regexp "Message|custom-scheduler"
+#+end_src
+
+Show all recent Events for the Pod:
+
+#+begin_src shell
+kubectl get events --field-selector=involvedObject.name=$NAME --namespace=$NAMESPACE --output=wide
+#+end_src
+
+* Metrics Server
+
+The Kubernetes =Metrics Server= is a source used to display container resource metrics.
+
+** Installation
+
+Create the directory structure:
+
+#+begin_src shell
+mkdir --parents $HOME/git/manifests/yaml/metrics
+#+end_src
+
+Download the manifest file for the Kubernetes Metrics Server:
+
+#+begin_src shell
+wget --output-document=$HOME/manifests/yaml/metrics/metrics-server.yaml https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#+end_src
+
+Modify the container arguments for the Kubernetes Metrics Server:
+
+#+begin_src yaml
+...
+spec:
+      containers:
+      - args:
+        - ...
+        - "--kubelet-insecure-tls=true"
+...
+#+end_src
+
+Apply the manifest:
+
+#+begin_src shell
+kubectl apply --filename=$HOME/manifests/yaml/metrics/metrics-server.yaml
+#+end_src
+
+Wait a minute-or-two for the metrics to populate.
+
+Run ~kubectl top~ to check that the Kubernetes Metrics Server is fully operational.
+
+* Top
+
+Display Resource usage for CPU and memory consumption.
+
+List resource usage by node:
+
+#+begin_src shell
+kubectl top nodes
+#+end_src
+
+|---------------------------+------------+------+---------------+---------|
+| NAME                      | CPU(cores) | CPU% | MEMORY(bytes) | MEMORY% |
+|---------------------------+------------+------+---------------+---------|
+| lab-cluster-control-plane | 145m       |   1% | 1043Mi        |      7% |
+| lab-cluster-worker        | 19m        |   0% | 361Mi         |      2% |
+| lab-cluster-worker2       | 27m        |   0% | 427Mi         |      2% |
+|---------------------------+------------+------+---------------+---------|
+
+List resource usage by Pod (for the =kube-system= Namespace):
+
+#+begin_src shell
+kubectl top pods --namespace=kube-system
+#+end_src
+
+|---------------------------------------------------+------------+---------------|
+| NAME                                              | CPU(cores) | MEMORY(bytes) |
+|---------------------------------------------------+------------+---------------|
+| coredns-787d4945fb-542g4                          | 3m         | 59Mi          |
+| coredns-787d4945fb-p8647                          | 3m         | 13Mi          |
+| etcd-lab-cluster-control-plane                    | 27m        | 68Mi          |
+| kindnet-4s4tm                                     | 1m         | 41Mi          |
+| kindnet-88gvr                                     | 1m         | 41Mi          |
+| kindnet-qzsnj                                     | 1m         | 41Mi          |
+| kube-apiserver-lab-cluster-control-plane          | 47m        | 346Mi         |
+| kube-controller-manager-lab-cluster-control-plane | 18m        | 105Mi         |
+| kube-proxy-459df                                  | 1m         | 59Mi          |
+| kube-proxy-hpzbn                                  | 1m         | 57Mi          |
+| kube-proxy-pvpfg                                  | 1m         | 57Mi          |
+| kube-scheduler-lab-cluster-control-plane          | 4m         | 68Mi          |
+| metrics-server-67ccc48c4-6dh8l                    | 5m         | 17Mi          |
+|---------------------------------------------------+------------+---------------|
+
+Sort Pods by CPU usage:
+
+#+begin_src shell
+kubectl top pods --all-namespaces --sort-by=memory
+#+end_src
+
+Sort Pods by memory usage:
+
+#+begin_src shell
+kubectl top pods --all-namespaces --sort-by=memory
+#+end_src
+
+List resource usage by container:
+
+#+begin_src shell
+kubectl top pods --containers --namespace=$NAMESPACE
+#+end_src
+
+|------------+-------+------------+---------------|
+| POD        | NAME  | CPU(cores) | MEMORY(bytes) |
+|------------+-------+------------+---------------|
+| chatterbox | noisy | 0m         | 0Mi           |
+| chatterbox | quiet | 0m         | 0Mi           |
+|------------+-------+------------+---------------|
+
+* Logs
+
+Kubernetes captures logs from each container running in a Pod.
+
+** Create a Pod with verbose logs
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: chatterbox
+  namespace: default
+  labels:
+    app: chatterbox
+spec:
+  containers:
+  - name: quiet
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    command:
+    - "/bin/sh"
+    args:
+    - "-c"
+    - |-
+      while true;
+      do
+        echo 'I am the quiet application';
+        sleep 60;
+      done
+  - name: noisy
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    command:
+    - "/bin/sh"
+    args:
+    - "-c"
+    - |-
+      while true;
+      do
+        echo 'I am the noisy application';
+        sleep 30;
+      done"
+#+end_src
+
+Show logs for all containers in a Pod:
+
+#+begin_src shell
+kubectl logs pods/$NAME --all-containers --namespace=$NAMESPACE
+#+end_src
+
+For Pods with multiple containers, specify which container to display logs for:
+
+#+begin_src shell
+kubectl logs pods/$NAME --container=$CONTAINER --namespace=$NAMESPACE
+#+end_src
+
+*Tip*: remember you can stream logs using the ~--follow~ option and tail logs using the ~--tail~ option.
+
+*Note*: before checking logs, inspect the number of containers running in a Pod and identify the container names using the ~kubectl describe~ command.
+
+* Rollouts
+
+When upgrading Pods in a Deployment rolling updates are used as the default Deployment strategy ensuring zero downtime for an application.
+
+Use the following spec to configure the =RollingUpdate= strategy for a Deployment:
+
+#+begin_src yaml
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+#+end_src
+
+*Tip*: use the ~kubectl explain Deployment.spec.strategy~ command to access the local documentation relating to the =strategy= field.
+
+To update the image used in a Deployment, create a rollout using the ~kubectl apply --filename~ command or using the ~kubectl set image~ command respectively.
+
+#+begin_src shell
+kubectl set image deployments.apps/$NAME $CONTAINER=$IMAGE --namespace=$NAMESPACE
+#+end_src
+
+Alternatively, use a manifest with the ~kubectl set image~ command using the ~--filename~ option:
+
+#+begin_src shell
+kubectl set image --filename=$FILE $CONTAINER=$IMAGE --namespace=$NAMESPACE
+#+end_src
+
+Get the status output for a rollout:
+
+#+begin_src shell
+kubectl rollout status deployments.apps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+The =Recreate= strategy is useful for legacy applications, mostly when a Deployment is forced to use a single replica, or when scaling down all replicas at once is acceptable.
+
+Rollback a Deployment:
+
+#+begin_src shell
+kubectl rollout undo deployments.apps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Rollback a Deployment to a particular revision:
+
+#+begin_src shell
+kubectl rollout undo deployments.apps/$NAME --namespace=$NAMESPACE --to-revision=$NUMBER
+#+end_src
+
+Use the ~kubectl rollout undo~ command to undo a rollout. A rollout is essentially an additional ReplicaSet added to the Deployment with the previous ReplicaSet being scaled down to zero Pods.
+
+View rollout history:
+
+#+begin_src shell
+kubectl rollout history deployments.apps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+View the current revison:
+
+#+begin_src shell
+kubectl rollout history deployments.apps/$NAME --namespace=$NAMESPACE --output=jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}'
+#+end_src
+
+Pause a rollout:
+
+#+begin_src shell
+kubectl rollout pause deployments.apps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Resume a rollout:
+
+#+begin_src shell
+kubectl rollout resume deployments.apps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+* Resource aggregation
+
+Display multiple resources at the same time, separating each resource using a comma.
+
+** Example
+
+Show Pods and services matching a selector:
+
+#+begin_src shell
+kubectl get pods,services --namespace=$NAMESPACE --selector=$LABELS
+#+end_src
+
+Show a Pod and service together:
+
+#+begin_src shell
+kubectl get pods/$POD_NAME services/$SERVICE_NAME --namespace=$NAMESPACE
+#+end_src
+
+* Commands
+
+Override the =ENTRYPOINT= and =CMD= for a container using the =command= and =args= fields respectively.
+
+** Override container CMD
+
+Imperative command:
+
+#+begin_src shell
+kubectl run $NAME --image=$IMAGE --labels=$LABELS --namespace=$NAMESPACE -- $ARG1 $ARG2 ...
+#+end_src
+
+*Note*: =--= is used to signal the end of the ~kubectl~ flags and the beginning of the container arguments.
+
+** Override container ENTRYPOINT
+
+Imperative command:
+
+#+begin_src shell
+kubectl run $NAME --command --image=$IMAGE --labels=$LABELS --namespace=$NAMESPACE -- $COMMAND $ARG1 $ARG2 ...
+#+end_src
+
+*Note*: =--= is used to signal the end of the ~kubectl~ flags and the beginning of the container command.
+
+* Environment variables
+
+Pass environment variables through to a container.
+
+** Create a Pod with environment variables
+
+Imperative command:
+
+#+begin_src shell
+kubectl run $NAME --env=$ENV1 --env=$ENV2 --image=$IMAGE --labels=$LABELS --namespace=$NAMESPACE -- $ARG1 $ARG2 ...
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    env:
+    - name: KUBERNETES_ADMIN_USER
+      value: deus
+    - name: KUBERNETES_CLUSTER_NAME
+      value: kubern80s
+#+end_src
+
+View environment variables from the container:
+
+#+begin_src shell
+kubectl exec pods/busybox --stdin --tty -- /bin/env | grep --extended-regex 'KUBERNETES_ADMIN_USER|KUBERNETES_CLUSTER_NAME'
+#+end_src
+
+* ConfigMaps
+
+A =ConfigMap= is an API object used to store non-confidential data as key-value pairs.
+
+** Create a ConfigMap with multiple key-value pairs
+
+Imperative command:
+
+#+begin_src shell
+kubectl create configmap $NAME --from-literal=$ENV1 --from-literal=$ENV2
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-configmap
+data:
+  KUBERNETES_ADMIN_USER: deus
+  KUBERNETES_CLUSTER_NAME: kubern80s
+#+end_src
+
+Example manifest using multiline values:
+
+#+begin_src yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-configmap
+data:
+  key1: Hello, world!
+  key2: |-
+        A line
+          An indented line
+        Yet another line, whoop-de-do!
+#+end_src
+
+Show resource output for a ConfigMap:
+
+#+begin_src shell
+kubectl get configmaps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Describe a ConfigMap:
+
+#+begin_src shell
+kubectl describe configmaps/$NAME --namespace=$NAMESPACE
+#+end_src
+
+* Environment variables in ConfigMaps
+
+Pass environment variables through to a container using a ConfigMap.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    envFrom:
+    - configMapRef:
+        name: my-configmap
+#+end_src
+
+View environment variables from the container:
+
+#+begin_src shell
+kubectl exec pods/busybox --stdin --tty -- /bin/env | grep --extended-regex 'KUBERNETES_ADMIN_USER|KUBERNETES_CLUSTER_NAME'
+#+end_src
+
+Populate a single environment variable using a ConfigMap:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    env:
+    - name: KUBERNETES_CLUSTER_NAME
+      valueFrom:
+        configMapKeyRef:
+          name: my-configmap
+          key: KUBERNETES_CLUSTER_NAME
+#+end_src
+
+*Tip*: use the ~kubectl explain Pod.spec.containers.env~ and ~kubectl explain Pod.spec.containers.env.valueFrom~ commands to access local documentation on the =env= and =valueFrom= fields respectively.
+
+View environment variables from the container:
+
+#+begin_src shell
+kubectl exec pods/busybox --stdin --tty -- /bin/env | grep KUBERNETES_CLUSTER_NAME
+#+end_src
+
+* Secrets
+
+A =Secret= is an object that contains a small amount of sensitive data.
+
+Imperative command:
+
+#+begin_src shell
+kubectl create secret generic $NAME --from-literal=$SECRET1 --from-literal=$SECRET2 --from-literal=$SECRET3 --namespace=$NAMESPACE --type=Opaque
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-secret
+  namespace: default
+data:
+  GOLDENEYE_CODES: aWFtaW52aW5jaWJsZQ==
+  PASSWORD: dDBwLTUzY3IzdCE=
+  PRIMARY_MISSION: dGVh
+type: Opaque
+#+end_src
+
+Show resource output for a Secret:
+
+#+begin_src shell
+kubectl get secrets/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Describe a Secret:
+
+#+begin_src shell
+kubectl describe secrets/$NAME --namespace=$NAMESPACE
+#+end_src
+
+Retrieve =base64= encoded values for Secrets using ~--ouput=yaml~ or decoded values using ~--output=jsonpath~:
+
+#+begin_src shell
+echo -n "Secret value: " && kubectl get secret/my-secret --output=jsonpath='{.data.PASSWORD}' | base64 --decode
+#+end_src
+
+Secret value: =t0p-53cr3t!=
+
+* Environment variables with Secrets
+
+Pass environment variables through to a container using a Secret.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    envFrom:
+    - secretRef:
+        name: my-secret
+#+end_src
+
+View environment variables from the container:
+
+#+begin_src shell
+kubectl exec pods/busybox --stdin --tty -- /bin/env | grep --extended-regexp "GOLDENEYE_CODES|PASSWORD|PRIMARY_MISSION"
+#+end_src
+
+Populate a single environment variable using a Secret:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    env:
+    - name: PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: my-secret
+          key: PASSWORD
+#+end_src
+
+*Tip*: use the ~kubectl explain Pod.spec.containers.env~ and ~kubectl explain Pod.spec.containers.env.valueFrom~ commands to access local documentation on to the =env= and =valueFrom= fields respectively.
+
+View environment variables from the container:
+
+#+begin_src shell
+kubectl exec pods/busybox --stdin --tty -- /bin/env | grep PASSWORD
+#+end_src
+
+* ConfigMaps and Secrets as Volumes
+
+Mount volumes to a container using either ConfigMaps or Secrets.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    volumeMounts:
+    - name: my-config
+      mountPath: /etc/my-app
+    - name: my-sensitive-config
+      mountPath: /etc/my-other-app
+  volumes:
+  - name: my-config
+    configMap:
+      name: my-configmap
+  - name: my-sensitive-config
+    secret:
+      secretName: my-secret
+#+end_src
+
+View volumes from the container:
+
+#+begin_src shell
+for i in my-app my-other-app ; do kubectl exec pods/busybox -- /bin/ls /etc/$i ; done
+#+end_src
+
+Mount individual files to a container:
+
+#+begin_src yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: default
+  labels:
+    app: nginx
+data:
+  nginx.conf: |-
+    error_log         /var/log/nginx/error.log notice;
+    pid               /var/run/nginx.pid;
+    user              nginx;
+    worker_processes  auto;
+
+    events {
+        worker_connections  1024;
+    }
+
+    http {
+        include            /etc/nginx/mime.types;
+        default_type       application/octet-stream;
+
+        log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                          '$status $body_bytes_sent "$http_referer" '
+                          '"$http_user_agent" "$http_x_forwarded_for"';
+
+        access_log         /var/log/nginx/access.log  main;
+        sendfile           on;
+        keepalive_timeout  65;
+
+        server {
+            listen       80;
+            server_name  localhost;
+
+            location / {
+                root   /usr/share/nginx/html;
+                index  index.html index.htm;
+            }
+
+            error_page  404              /404.html;
+
+            error_page   500 502 503 504  /50x.html;
+            location = /50x.html {
+                root   /usr/share/nginx/html;
+            }
+        }
+
+        include /etc/nginx/conf.d/*.conf;
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-html
+  namespace: default
+  labels:
+    app: nginx
+data:
+  index.html: |-
+    Congratulations! You are running NGINX.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+    - name: nginx-config
+      mountPath: /etc/nginx/nginx.conf
+      subPath: nginx.conf
+    - name: nginx-html
+      mountPath: /usr/share/nginx/html/index.html
+      subPath: index.html
+  volumes:
+  - name: nginx-config
+    configMap:
+      name: nginx-config
+      defaultMode: 0644
+      items:
+      - key: nginx.conf
+        path: nginx.conf
+        mode: 0644
+  - name: nginx-html
+    configMap:
+      name: nginx-html
+      defaultMode: 0644
+      items:
+      - key: index.html
+        path: index.html
+        mode: 0644
+#+end_src
+
+* ClusterConfiguration
+
+Cluster configuration for =kubeadm= deployed clusters.
+
+** Output cluster configuration
+
+Display the ConfigMap containing the configuration for the cluster:
+
+#+begin_src shell
+kubectl get configmaps/kubeadm-config --namespace=kube-system --output=yaml
+#+end_src
+
+Dump the current cluster state to STDOUT:
+
+#+begin_src shell
+kubectl cluster-info dump --all-namespaces --output=yaml
+#+end_src
+
+* EncryptionConfiguration
+
+Setup resource encryption in Kubernetes.
+
+** A concern
+
+Confidential data is not encryptyed at rest and can be viewed if you have access to the ETCD database:
+
+#+begin_src shell
+echo -n "Unencrypted output: " && kubectl exec pods/etcd-$CONTROLPLANE_HOST --namespace=kube-system -- /usr/local/bin/etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key get /registry/secrets/default/my-secret | tail --lines=3 | head --lines=1
+#+end_src
+
+Unencrypted output: =GOLDENEYE_CODESiaminvincible=
+
+A major concern is that data stored as Kubernetes Secrets is readable, potentially allowing lateral movement from an adversary.
+
+To rectify this we should encrypt Secrets at rest.
+
+** Create a secret key
+
+Generate a 32 byte random key and base64 encode it:
+
+#+begin_src shell
+head --bytes=32 /dev/urandom | base64
+#+end_src
+
+** Create an encryption configuration file
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+- resources:
+  - secrets
+  providers:
+  - secretbox:
+      keys:
+      - name: primary-key
+        secret: QSVowJEw4tL3t94z5fqP7h54d6U8ji/LBiKkoQvPkYY=
+  - identity: {}
+#+end_src
+
+Copy the =EncryptionConfiguration= file to the controlplane node and save it under =/etc/kubernetes/enc/enc.yaml=.
+
+Update the static Pod manifest for the Kubernetes API server and make sure that its contents contain the following fields:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-apiserver
+  namespace: kube-system
+  ...
+spec:
+  containers:
+  - ...
+    command:
+    - kube-apiserver
+    ...
+    - --encryption-provider-config=/etc/kubernetes/enc/enc.yaml
+    volumeMounts:
+    ...
+    - name: enc
+      mountPath: /etc/kubernetes/enc
+      readonly: true
+    ...
+  volumes:
+  ...
+  - name: enc
+    hostPath:
+      path: /etc/kubernetes/enc
+      type: DirectoryOrCreate
+  ...
+#+end_src
+
+Restart the Kubernetes API server:
+
+#+begin_src shell
+kubectl delete pods/kube-apiserver-$CONTROLPLANE_HOST --namespace=kube-system
+#+end_src
+
+Recreate each Secret to trigger the encryption:
+
+#+begin_src shell
+kubectl get secrets --all-namespaces --output=json | kubectl replace --filename -
+#+end_src
+
+Confidential Kubernetes data (i.e. Secrets) should now be encryptyed at rest and are no longer viewable in plain text.
+
+Verify that Kubernetes Secrets are accessible:
+
+#+begin_src shell
+echo -n "Secret: " && kubectl get secrets/my-secret --output=jsonpath='{.data.GOLDENEYE_CODES}' | base64 --decode
+#+end_src
+
+Secret: iaminvincible
+
+Now we are protected from ETCD compromise.
+
+It is important to deny access to the =EncrytpionConfiguration= file (i.e. by limiting access to the Kubernetes API server), as anyone with has access to the =EncrytpionConfiguration= file (and ETCD) will be able to decrypt the Kubernetes Secrets.
+
+*Note*: an =EncryptionConfiguration= file will not protect you from controlplane compromise, use =KMS= instead.
+
+* Sidecars
+
+Multi-container Pods in Kubernetes.
+
+** What is a sidecar?
+
+A sidecar is a secondary container in a =Pod= (analogous to a sidecar on a motorcyle).
+
+A good practise is to use single container Pods, but sometimes multi-container Pods are unavoidable. An application may require multiple containers with tightly-coupled resources, hence the need for multi-container Pods. Perhaps a container needs to share a network namespace or access a certain =volume=.
+
+Kubernetes requires containers write logs to STDOUT. Sometimes a legacy application will store logs on the container filesystem, so a sidecar can be used to redirect these logs to STDOUT.
+
+** Share a Volume with a sidecar
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  volumes:
+  - name: shared-data
+    emptyDir: {}
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: shared-data
+      mountPath:  /usr/share/nginx/html
+  - name: content
+    image: docker.io/library/busybox:1.36
+    imagePullPolicy: IfNotPresent
+    command:
+    - "/bin/sh"
+    args:
+    - "-c"
+    - |-
+      echo 'Hello from the sidecar container!' > /nginx-data/index.html;
+      sleep 3600
+    volumeMounts:
+    - name: shared-data
+      mountPath: /nginx-data
+#+end_src
+
+Verify that the sidecar can write to the other container:
+
+#+begin_src shell
+echo -n "Output: " && kubectl exec pods/nginx --container=nginx -- /bin/cat /usr/share/nginx/html/index.html
+#+end_src
+
+Output: =Hello from the sidecar container!=
+
+Create a =NodePort= service for NGINX:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+    nodePort: 30080
+  type: NodePort
+#+end_src
+
+View content served over NGINX:
+
+#+begin_src shell
+echo -n "Output: " && curl 127.0.0.1:80
+#+end_src
+
+Output: =Hello from the sidecar container!=
+
+* initContainers
+
+An =initContainer= is a short-lived container intended for bootstrap tasks.
+
+** Create a Pod containing an initContainer
+
+Let's chat like the 90's and create an IRC bouncer in Kubernetes... new-retro!
+
+ZNC requires an initContainer to bootstrap the configuration, waiting for interaction to generate the initial configuration.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: irc
+  labels:
+    app: znc
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: znc-data
+  namespace: irc
+  labels:
+    app: znc
+spec:
+  storageClassName: civo-volume
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: znc-irc
+  namespace: irc
+  labels:
+    app: znc
+  annotations:
+    kubernetes.civo.com/firewall-id: 5c6d735a-4a2a-4a7a-a7d3-5031838c0091
+    kubernetes.civo.com/ipv4-address: "212.2.241.47"
+    kubernetes.civo.com/loadbalancer-algorithm: least_connections
+spec:
+  selector:
+    app: znc
+  ports:
+  - name: ircs-u
+    port: 6697
+    protocol: TCP
+    targetPort: 6697
+    nodePort: 30097
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: znc-webui
+  namespace: irc
+  labels:
+    app: znc
+spec:
+  selector:
+    app: znc
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 8443
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: znc
+  namespace: irc
+  labels:
+    app: znc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: znc
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: znc
+    spec:
+      securityContext:
+        fsGroup: 101
+      initContainers:
+      - name: znc-init
+        image: docker.io/library/znc:1.9.1
+        imagePullPolicy: IfNotPresent
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |-
+          until [[ -f /znc-data/configs/znc.conf ]];
+          do
+            echo "Waiting for znc.conf";
+            sleep 5;
+          done
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          runAsGroup: 101
+          runAsNonRoot: true
+          runAsUser: 100
+          readOnlyRootFilesystem: true
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: znc-data
+          mountPath: /znc-data
+      containers:
+      - name: znc
+        image: docker.io/library/znc:1.9.1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: ircs-u
+          containerPort: 6697
+        - name: http-alt
+          containerPort: 8443
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          runAsGroup: 101
+          runAsNonRoot: true
+          runAsUser: 100
+          readOnlyRootFilesystem: true
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: znc-data
+          mountPath: /znc-data
+        readinessProbe:
+          tcpSocket:
+            port: 8443
+          initialDelaySeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 6697
+          failureThreshold: 3
+          initialDelaySeconds: 300
+          periodSeconds: 60
+          successThreshold: 1
+      volumes:
+      - name: znc-data
+        persistentVolumeClaim:
+          claimName: znc-data
+#+end_src
+
+Initialise ZNC:
+
+#+begin_src shell
+kubectl exec pods/$ZNC_POD --container=znc-init --namespace=irc --stdin --tty -- ./entrypoint.sh --makeconf
+#+end_src
+
+*Note*: if the above command fails, allow for a moment and then re-run the command again.
+
+Access ZNC through the web UI using the =port-forward= command:
+
+#+begin_src shell
+kubectl port-forward services/znc-webui 8443:443 --namespace=irc
+#+end_src
+
+Alternatively, expose the web interface to the internet using an =Ingress= rule.
+
+*Warning*: exposing ZNC directly on the internet will increase its attack surface.
+
+* TODO Maintenance
+
+Prepare Kubernetes nodes for maintenance.
+
+Drain a node (of all =Pods=) and cordon it:
+
+#+begin_src shell
+kubectl drain nodes/$NAME --force --ignore-daemonsets
+#+end_src
+
+Show resource output for a node:
+
+#+begin_src shell
+kubectl get nodes/$NAME
+#+end_src
+
+Disable scheduling on a node (without draining Pods):
+
+#+begin_src shell
+kubectl cordon nodes/$NAME
+#+end_src
+
+Uncordon a node (mark node as schedulable):
+
+#+begin_src shell
+kubectl uncordon nodes/$NAME
+#+end_src
+
+Show resource output to display if a node is unschedulable:
+
+#+begin_src shell
+kubectl get nodes,pods --output=custom-columns=NAME:metadata.name,NODE:spec.nodeName,Unschedulable:spec.unschedulable
+#+end_src
+
+* Kubernetes upgrades
+
+Upgrade a Kubernetes cluster.
+
+** Controlplane Upgrade
+
+Drain the controlplane node:
+
+#+begin_src shell
+kubectl drain nodes/$NAME --force --ignore-daemonsets
+#+end_src
+
+Show resource output for the controlplane node:
+
+#+begin_src shell
+kubectl get nodes/$NAME
+#+end_src
+
+*Important*: run the following commands on the controlplane host.
+
+Output version information for the =kubeadm= package:
+
+#+begin_src shell
+apt-cache policy kubeadm | grep --extended-regexp 'Candidate|Installed'
+#+end_src
+
+Upgrade kubeadm:
+
+#+begin_src shell
+apt update && apt --allow-change-held-packages --assume-yes install kubeadm=$VERSION
+#+end_src
+
+Output version information for =kubeadm= (after performing the upgrade):
+
+#+begin_src shell
+kubeadm version
+#+end_src
+
+Print the upgrade plan:
+
+#+begin_src shell
+kubeadm upgrade plan
+#+end_src
+
+Apply the upgrade to the controlplane node:
+
+#+begin_src shell
+kubeadm upgrade apply $VERSION
+#+end_src
+
+Output version information for the =kubelet= package:
+
+#+begin_src shell
+apt-cache policy kubelet | grep --extended-regexp 'Candidate|Installed'
+#+end_src
+
+Upgrade the kublet on the controlplane:
+
+#+begin_src shell
+apt --allow-change-held-packages --assume-yes install kubelet=$VERSION
+#+end_src
+
+Restart the kubelet:
+
+#+begin_src shell
+systemctl daemon-reload
+systemctl restart kubelet.service
+#+end_src
+
+Uncordon the controlplane node:
+
+#+begin_src shell
+kubectl uncordon nodes/$NAME
+#+end_src
+
+Check that the kubelet has been upgraded to the correct version:
+
+#+begin_src shell
+kubectl get nodes/$NAME
+#+end_src
+
+** Worker Upgrade
+
+Drain the worker node:
+
+#+begin_src shell
+kubectl drain nodes/$NAME --force --ignore-daemonsets
+#+end_src
+
+*Important*: run the following commands on the worker node.
+
+Output version information for the =kubeadm= package:
+
+#+begin_src shell
+apt-cache policy kubeadm | grep --extended-regexp 'Candidate|Installed'
+#+end_src
+
+Upgrade kubeadm:
+
+#+begin_src shell
+apt update && apt --allow-change-held-packages --assume-yes install kubeadm=$VERSION
+#+end_src
+
+Output version information for =kubeadm= (after performing the upgrade):
+
+#+begin_src shell
+kubeadm version
+#+end_src
+
+Apply the upgrade to the worker node:
+
+#+begin_src shell
+kubeadm upgrade node
+#+end_src
+
+Output version information for the =kubelet= package:
+
+#+begin_src shell
+apt-cache policy kubelet | grep --extended-regexp 'Candidate|Installed'
+#+end_src
+
+Upgrade the kublet on the worker node:
+
+#+begin_src shell
+apt --allow-change-held-packages --assume-yes install kubelet=$VERSION
+#+end_src
+
+Restart the kubelet:
+
+#+begin_src shell
+systemctl daemon-reload
+systemctl restart kubelet.service
+#+end_src
+
+Uncordon the worker node:
+
+#+begin_src shell
+kubectl uncordon nodes/$NAME
+#+end_src
+
+Check that the kubelet has been upgraded to the correct version:
+
+#+begin_src shell
+kubectl get nodes/$NAME
+#+end_src
+
+* ETCD
+
+=ETCD= is a strongly consistent, distributed key-value store that provides a reliable way to store data that needs to be accessed by a distributed system or cluster of machines.
+
+** ETCD client
+
+Install the =etcdctl= binary on the controlplane:
+
+#+begin_src shell
+apt --assume-yes --no-install-recommends install etcd-client
+#+end_src
+
+Check the API version used by the =etcdctl= binary:
+
+#+begin_src shell
+etcdctl --version 2> /dev/null || etcdctl version
+#+end_src
+
+*Note*: if the API version is set to *2* then you must export the environment variable =ETCDCTL_API=3=.
+
+** ETCD client authentication
+
+Find the relevant certificate information and endpoint values used by the ETCD cluster:
+
+#+begin_src shell
+kubectl describe pods/etcd-$CONTROLPLANE_HOST --namespace=kube-system
+#+end_src
+
+*Tip*: review the command array for the ETCD =Pod= to obtain all necessary paths to the relevant certificates/keys used for authentication.
+
+*Note*: ETCD certificates use hostPath =Volumes= when deployed as a Pod, therefore certificate information should reside locally on the controlplane host.
+
+Certificate information can be passed to the ETCD client when exported as environment variables:
+
+#+begin_src shell
+cat <<'EOF' | tee --append $HOME/.bashrc
+
+# Export the ETCD server endpoints:
+export ETCD_SERVER_IP=$(kubectl get pods/etcd-$(hostname) --output=jsonpath='{.status.podIP}')
+
+# Export authentication environment variables for ETCD:
+export ETCDCTL_API=3
+export ETCDCTL_CACERT=/etc/kubernetes/pki/etcd/ca.crt
+export ETCDCTL_CERT=/etc/kubernetes/pki/etcd/server.crt
+export ETCDCTL_ENDPOINTS=$ETCD_SERVER_IP:2379
+export ETCDCTL_KEY=/etc/kubernetes/pki/etcd/server.key
+EOF
+#+end_src
+
+** Querying ETCD
+
+Query an ETCD database:
+
+#+begin_src shell
+ETCDCTL_API=3 etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --endpoints=$ETCD_SERVER_IP:2379 --key=/etc/kubernetes/pki/etcd/server.key get / --keys-only --limit=10000 --prefix
+#+end_src
+
+** Snapshot ETCD
+
+Snapshot an ETCD database:
+
+#+begin_src shell
+ETCDCTL_API=3 etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --endpoints=$ETCD_SERVER_IP:2379 --key=/etc/kubernetes/pki/etcd/server.key snapshot save etcd-snapshot-$(date '+%Y%m%d').db
+#+end_src
+
+*Warning*: when checking the status of a snapshot sometimes this causes the hash value of a snapshot to change. This may cause issues later-on when attempting to restore from an affected snapshot.
+
+View the status of a snapshot:
+
+#+begin_src shell
+ETCDCTL_API=3 etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --endpoints=$ETCD_SERVER_IP:2379 --key=/etc/kubernetes/pki/etcd/server.key snapshot status etcd-snapshot-$DATE.db --write-out=table
+#+end_src
+
+** ETCD restore
+
+Restore an ETCD cluster using a snapshot:
+
+#+begin_src shell
+ETCDCTL_API=3 etcdctl snapshot restore etcd-snapshot-$DATE.db --data-dir /var/lib/etcd-from-backup
+#+end_src
+
+*Note*: the restore process does not require authentication with an ETCD cluster.
+
+Update the ETCD manifest and point the cluster to the newly restored data:
+
+#+begin_src yaml
+[...]
+spec:
+  containers:
+  - command:
+    - "etcd"
+    - [...]
+    - "--data-dir /var/lib/etcd"
+    - [...]
+    [...]
+    volumeMounts:
+    - mountPath: /var/lib/etcd
+      name: etcd-data
+    - [...]
+  [...]
+  volumes:
+  - [...]
+  - hostPath:
+      path: /var/lib/etcd-from-backup
+      type: DirectoryOrCreate
+    name: etcd-data
+[...]
+#+end_src
+
+After editing the manifest, the ETCD pod should restart automatically.
+
+Delete the ETCD pod in order to re-create it quickly:
+
+#+begin_src shell
+kubectl delete pods/etcd-$CONTROLPLANE_HOST --force --grace-period=3 --namespace=kube-system
+#+end_src
+
+Try restarting the controlplane if the cluster does not recover cleanly:
+
+#+begin_src shell
+systemctl restart kubelet.service
+#+end_src
+
+** ETCD cluster Members
+
+Show all members of an ETCD cluster:
+
+#+begin_src shell
+ETCDCTL_API=3 etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --endpoints=$ETCD_SERVER_IP:2379 --key=/etc/kubernetes/pki/etcd/server.key member list --write-out=table
+#+end_src
+
+* Certificates
+
+Generate and sign user certificates.
+
+** Generate an RSA certificate
+
+Generate an =RSA= key:
+
+#+begin_src shell
+openssl genrsa -out $USER.key 3072
+#+end_src
+
+Output the public key:
+
+#+begin_src shell
+openssl rsa -in $USER.key -pubout > $USER.pem
+#+end_src
+
+** Generate an eliptic curve certificate
+
+Generate an =ed25519= key:
+
+#+begin_src shell
+openssl genpkey -algorithm ed25519 -out $USER.key
+#+end_src
+
+Output the public key:
+
+#+begin_src shell
+openssl pkey -in $USER.key -pubout > $USER.pem
+#+end_src
+
+** Generate a certificate signing request
+
+Create a certificate signing request (for a cluster-admin):
+
+#+begin_src shell
+openssl req -new -key $USER.key -out $USER.csr -subj "/O=system:masters/CN=$USER"
+#+end_src
+
+Create a certificate signing request (for a regular admin):
+
+#+begin_src shell
+openssl req -new -key $USER.key -out $USER.csr -subj "/O=demi-gods/O=platform-engineering/CN=$USER"
+#+end_src
+
+*Note*: assign group membership by specifying the =/O== attribute when creating the certificate signing request.
+
+Base64 encode a certificate signing request used by the CertificateSigningRequest object:
+
+#+begin_src shell
+cat $USER.csr | base64 --wrap=0
+#+end_src
+
+** Create a CertificateSigningRequest
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: certificates.k8s.io/v1
+kind: CertificateSigningRequest
+metadata:
+  name: deus
+spec:
+  signerName: kubernetes.io/kube-apiserver-client
+  expirationSeconds: 31536000
+  groups:
+  - system:authenticated
+  usages:
+  - client auth
+  request: <base64-encoded-csr>
+#+end_src
+
+Show resource output for a CertificateSigningRequest:
+
+#+begin_src shell
+kubectl get certificatesigningrequests.certificates.k8s.io/$USER --namespace=$NAMESPACE
+#+end_src
+
+Describe a CertificateSigningRequest:
+
+#+begin_src shell
+kubectl describe certificatesigningrequests.certificates.k8s.io/$USER --namespace=$NAMESPACE
+#+end_src
+
+Extract the =/CN== and =/O== attributes from a CertificateSigningRequest:
+
+#+begin_src shell
+kubectl get certificatesigningrequests.certificates.k8s.io/$USER --output=jsonpath='{.status.certificate}'| base64 --decode | openssl x509 -in - -noout -text
+#+end_src
+
+Approve a CertificateSigningRequest:
+
+#+begin_src shell
+kubectl certificate approve $USER
+#+end_src
+
+Deny a CertificateSigningRequest:
+
+#+begin_src shell
+kubectl certificate deny $USER
+#+end_src
+
+Retrieve a signed certificate:
+
+#+begin_src shell
+kubectl get certificatesigningrequests.certificates.k8s.io/$USER --output=jsonpath='{.status.certificate}'| base64 --decode > $USER.crt
+#+end_src
+
+** Troubleshooting certificates
+
+Troubleshoot certificate issues.
+
+List Pods running on the controlplane node:
+
+#+begin_src shell
+crictl ps
+#+end_src
+
+Check logs for certificate errors:
+
+#+begin_src shell
+circtl logs $CONTAINER_ID
+#+end_src
+
+*Note*: always check the API server logs first.
+
+Locate faulty certificate files (using the container arguments array):
+
+#+begin_src shell
+cat $STATIC_POD_PATH/$COMPONENT_MANIFEST.yaml
+#+end_src
+
+Print certificate information:
+
+#+begin_src shell
+openssl x509 -in $CERTIFICATE_FILE -noout -text
+#+end_src
+
+* RBAC
+
+Security policies in Kubernets are implemented using role-based access controls (=RBAC=).
+
+Common RBAC objects:
+
+|---------------------+----------------------------------------------------|
+| Object              | Description                                        |
+|---------------------+----------------------------------------------------|
+| Role                | Set Namespace-scoped access permissions.           |
+| ClusterRole         | Set cluster-scoped access permissions.             |
+| RoleBinding         | Associate Roles with users, groups and SAs.        |
+| ClusterRoleBinding  | Associate ClusterRoles with users, groups and SAs. |
+| ServiceAccount (SA) | An account for container processes.                |
+|---------------------+----------------------------------------------------|
+
+* Role
+
+RBAC =Roles= contain rules that represent a set of permissions within a =Namespace=.
+
+** Create a Role for a Namespace
+
+Imperative command:
+
+#+begin_src shell
+kubectl create role $NAME --namespace=$NAMESPACE --resource=$RESOURCE1,$RESOURCE2,...,$RESOURCE<N> --verb=$VERB1,$VERB2,...,$VERB<N>
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: web-developer
+  namespace: web
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - pods
+  - pods/log
+  - secrets
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+#+end_src
+
+Show resource output for a Role:
+
+#+begin_src shell
+kubectl get roles.rbac.authorization.k8s.io --namespace=$NAMESPACE
+#+end_src
+
+Describe a Role:
+
+#+begin_src shell
+kubectl describe roles.rbac.authorization.k8s.io --namespace=$NAMESPACE
+#+end_src
+
+** Admin Role
+
+Imperative command:
+
+#+begin_src shell
+kubectl create role $NAME --namespace=$NAMESPACE --resource=*.* --verb=*
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: web-admin
+  namespace: web
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'
+#+end_src
+
+** Granular Role
+
+For =Roles= and =ClusterRoles= rules can be assigned per resource.
+
+Imperative command:
+
+#+begin_src shell
+kubectl create role $NAME --namespace=default --resource=$RESOURCE1,$RESOURCE2,...,$RESOURCE<N> --resource-name=$OBJECT1 --resource-name=$OBJECT2 --verb=$VERB1,$VERB2,...,$VERB<N>
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reader
+  namespace: default
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/log
+  resourceNames:
+  - busybox
+  - nginx
+  verbs:
+  - get
+  - list
+  - watch
+#+end_src
+
+* RoleBinding
+
+A =RoleBinding= associated a =Role= with users, groups and service accounts.
+
+** Grant a user access to resources in a Namespace
+
+Imperative command:
+
+#+begin_src shell
+kubectl create rolebinding $NAME --namespace=$NAMESPACE --role=$ROLE (--user=$USER|--group=$GROUP)
+#+end_src
+
+Example manifest (user):
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: web-developer
+  namespace: web
+roleRef:
+  kind: Role
+  name: web-developer
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: User
+  name: james
+  apiGroup: rbac.authorization.k8s.io
+#+end_src
+
+Example manifest (group):
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: web-admin
+  namespace: web
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: web-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: demi-gods
+#+end_src
+
+* ClusterRole
+
+An RBAC =ClusterRole= contains rules that represent a set of permissions for a Kubernetes cluster.
+
+** Create a ClusterRole for the cluster admin
+
+Imperative command:
+
+#+begin_src shell
+kubectl create clusterrole cluster-admin --resource=*.* --verb=*
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-admin
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'
+#+end_src
+
+*Warning*: the =cluster-admin= ClusterRole will grant full-access to all resources in the Kubernetes cluster (this is synonymous to being =root=).
+
+Show resource output for a ClusterRole:
+
+#+begin_src shell
+kubectl get clusterroles.rbac.authorization.k8s.io
+#+end_src
+
+Describe a ClusterRole:
+
+#+begin_src shell
+kubectl describe clusterroles.rbac.authorization.k8s.io
+#+end_src
+
+* ClusterRoleBinding
+
+A =ClusterRoleBinding= associates a =ClusterRole= with users, groups and service accounts.
+
+** Grant a user admin access to all resources in the cluster
+
+Imperative command:
+
+#+begin_src shell
+kubectl create clusterrolebinding cluster-admin --clusterrole=cluster-admin --user=($USER|$GROUP)
+#+end_src
+
+Example manifest (user):
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-admin
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: User
+  name: deus
+  apiGroup: rbac.authorization.k8s.io
+#+end_src
+
+Example manifest (group):
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: gods
+#+end_src
+
+* kubeconfig
+
+A kubeconfig file contains information on clusters, users, =Namespaces=, and authentication mechanisms.
+
+** Adding users
+
+Add a new user using an approved =CertificateSigningRequest=.
+
+Retrieve the signed certificate:
+
+#+begin_src shell
+kubectl get certificatesigningrequests.certificates.k8s.io/$USER --output=jsonpath='{.status.certificate}'| base64 --decode > $USER_CERT
+#+end_src
+
+Generate user credentials:
+
+#+begin_src shell
+kubectl --kubeconfig=$USER_KUBECONFIG config set-credentials $USER --client-certificate=$USER_CERT --client-key=$USER_KEY --embed-certs
+#+end_src
+
+*Note*: see =certificates= to generate a key for the user.
+
+Extract the cluster CA (using an existing kubeconfig):
+
+#+begin_src shell
+kubectl --kubeconfig=$ADMIN_KUBECONFIG config view --output=jsonpath='{.clusters[0].cluster.certificate-authority-data}' --raw | base64 --decode > $CLUSTER_CA_CERT
+#+end_src
+
+Extract the cluster IP:
+
+#+begin_src shell
+export CLUSTER_PUBLIC_IP=$(kubectl --kubeconfig=$ADMIN_KUBECONFIG config view --output=jsonpath='{.clusters[0].cluster.server}' --raw)
+#+end_src
+
+Generate cluster configuration:
+
+#+begin_src shell
+kubectl --kubeconfig=$USER_KUBECONFIG config set-cluster $CLUSTER --certificate-authority=$CLUSTER_CA_CERT --embed-certs --server=$CLUSTER_PUBLIC_IP
+#+end_src
+
+Generate the cluster context:
+
+#+begin_src shell
+kubectl --kubeconfig=$USER_KUBECONFIG config set-context $CONTEXT --cluster=$CLUSTER --namespace=$NAMESPACE --user=$USER
+#+end_src
+
+Set the current context:
+
+#+begin_src shell
+kubectl --kubeconfig=$USER_KUBECONFIG config use-context $CONTEXT
+#+end_src
+
+** Merging
+
+Merge two (or more) kubeconfig files into one:
+
+#+begin_src shell
+export KUBECONFIG=$USER_KUBECONFIG1:$USER_KUBECONFIG2:...:$USER_KUBECONFIG<N>
+kubectl config view --flatten | tee $HOME/.kube/config
+export KUBECONFIG=$HOME/.kube/config
+#+end_src
+
+** Contexts
+
+List contexts:
+
+#+begin_src shell
+kubectl config get-contexts
+#+end_src
+
+Switch contexts:
+
+#+begin_src shell
+kubectl config use-context $CONTEXT
+#+end_src
+
+Set the Namespace for the current context:
+
+#+begin_src shell
+kubectl config set-context --current --namespace=$NAMESPACE
+#+end_src
+
+* ServiceAccount
+
+A =ServiceAccount= is used by a container process to authenticate a =Pod= with the Kubernetes API.
+
+** Create a ServiceAccount
+
+Imperative command:
+
+#+begin_src shell
+kubectl create serviceaccount $NAME --namespace=$NAMESPACE
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-reader
+  namespace: default
+#+end_src
+
+Describe a ServiceAccount:
+
+#+begin_src shell
+kubectl describe serviceaccounts/$NAME --namespace=$NAMESPACE
+#+end_src
+
+** Associate ServiceAccounts with RoleBindings
+
+Use =Roles= and =RoleBindings= with ServiceAccounts to control the level of access a Pod has to the cluster.
+
+Imperative command:
+
+#+begin_src shell
+kubectl create rolebinding $NAME --namespace=$NAMESPACE --role=$ROLE --serviceaccount=$NAMESPACE:$SERVICE_ACCOUNT
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-reader
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pod-reader
+subjects:
+- kind: ServiceAccount
+  name: pod-reader
+  namespace: default
+#+end_src
+
+** Associate a Pod with a ServiceAccount
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-reader
+  labels:
+    app: pod-reader
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36.0
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+  serviceAccountName: pod-reader
+#+end_src
+
+*Tip*: use the =kubectl explain Pod.spec= command to access local documentation on the =serviceAccountName= field.
+
+Check that the =TokenRequest API= has allocated a token to the Pod (containing the ServiceAccount):
+
+#+begin_src shell
+kubectl exec pods/pod-reader --stdin --tty -- /bin/cat /var/run/secrets/kubernetes.io/serviceaccount/token
+#+end_src
+
+* Access
+
+Check that your *current* user has the necessary access to the perform an action:
+
+#+begin_src shell
+# An ACTION could be any command, such as: `create deployments`, `get pods`,
+# etc.
+kubectl auth can-i $ACTION --namespace=$NAMESPACE
+#+end_src
+
+Check that a particular user has the necessary access to perform an action:
+
+#+begin_src shell
+kubectl auth can-i $ACTION --as=$USER --namespace=$NAMESPACE
+#+end_src
+
+Check that a particular serviceaccount has the necessary access to perform an action:
+
+#+begin_src shell
+kubectl auth can-i $ACTION --as=system:serviceaccount:$NAMESPACE:$SERVICEACCOUNT
+#+end_src
+
+* Image security
+
+Pull images from a private container registry using a =Secret=.
+
+** Create a registry credential Secret
+
+Imperative command:
+
+#+begin_src shell
+kubectl create secret docker-registry regcred --docker-password=$TOKEN --docker-server=$CONTAINER_REGISTRY_DOMAIN --docker-username=$GITHUB_USER --namespace=$NAMESPACE
+#+end_src
+
+View Secret data:
+
+#+begin_src shell
+kubectl get secrets/regcred --namespace=$NAMESPACE --output=jsonpath='{.data.\.dockerconfigjson}' | base64 --decode | jq .
+#+end_src
+
+Example output:
+
+#+begin_src json
+{
+  "auths": {
+    "ghcr.io": {
+      "username": "octocat",
+      "password": "ghp_thistokenistotallyreal",
+      "auth": "b2N0b2NhdDpnaHBfdGhpc3Rva2VuaXN0b3RhbGx5cmVhbA=="
+    }
+  }
+}
+#+end_src
+
+Pull a container image using a private container registry:
+
+#+begin_src yaml
+metadata:
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: utils
+spec:
+  imagePullSecrets:
+  - name: regcred
+  containers:
+  - name: utilities
+    image: ghcr.io/octocat/example-image:v0.2.0
+    imagePullPolicy: IfNotPresent
+    command:
+    - "sleep"
+    args:
+    - "3600"
+  restartPolicy: Never
+#+end_src
+
+* Security contexts
+
+Define privileges and access control settings for a =Pod= or container.
+
+Table of common security contexts:
+
+|---------------------------+--------------------------------------------------|
+| Security context          | Description                                      |
+|---------------------------+--------------------------------------------------|
+| UIDs and GIDs             | Override the user and group for a Pod/container. |
+| SELinux                   | Assign security labels.                          |
+| Linux capabilities        | Add/remove capabilities used by a container.     |
+| Privileged containers     | Disable security lockdown precautions.           |
+| Seccomp                   | Filter system calls.                             |
+| Priviledge escalation     | Set =no_new_privs= flag on the container process.  |
+| Read-only root filesystem | Make the container root filesystem read-only.    |
+|---------------------------+--------------------------------------------------|
+
+** Create a hardened NGINX pod using security contexts:
+
+Example manifest:
+
+#+begin_src yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-unprivileged-config
+  namespace: default
+  labels:
+    app: nginx-unprivileged
+data:
+  default.conf: |-
+    server {
+        listen       8080;
+        server_name  localhost;
+
+        location / {
+            root   /usr/share/nginx/html;
+            index  index.html index.htm;
+        }
+
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   /usr/share/nginx/html;
+        }
+
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-unprivileged-html
+  namespace: default
+  labels:
+    app: nginx-unprivileged
+data:
+  index.html: |-
+    Congratulations! You are running the unprivileged version of
+    NGINX.
+
+    This container does not run as the root user.
+
+    Currently NGINX is listening on port 8080.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-unprivileged
+  namespace: default
+  labels:
+    app: nginx-unprivileged
+spec:
+  securityContext:
+    # Add a supplemental group with GID "101":
+    fsGroup: 101
+  containers:
+  - name: nginx-unprivileged
+    image: ghcr.io/nginxinc/nginx-unprivileged:1.25.4
+    imagePullPolicy: IfNotPresent
+    securityContext:
+      # Set the "no_new_privs" flag on the container process:
+      allowPrivilegeEscalation: false
+      # Add/drop the default set of capabilites granted by the
+      # container runtime:
+      capabilities:
+        drop:
+        # Drop all capabilities:
+        - ALL
+      # Do not allow the container to run as "priviledged":
+      privileged: false
+      # Run a container with GID "101":
+      runAsGroup: 101
+      # Do not allow the container to run as the root user (UID
+      # "0"):
+      runAsNonRoot: true
+      # Run a container with UID "101":
+      runAsUser: 101
+      # Set the root filesystem for the container to read-only:
+      readOnlyRootFilesystem: true
+      # Apply the default container runtime seccomp profile:
+      seccompProfile:
+        type: RuntimeDefault
+    volumeMounts:
+    - name: nginx-config
+      mountPath: /etc/nginx/conf.d/default.conf
+      subPath: default.conf
+      readOnly: true
+    - name: nginx-html
+      mountPath: /usr/share/nginx/html/index.html
+      subPath: index.html
+      readOnly: true
+    - name: tmpfs1
+      mountPath: /tmp
+    - name: tmpfs2
+      mountPath: /var/cache
+    - name: tmpfs3
+      mountPath: /var/run
+  volumes:
+  - name: nginx-config
+    configMap:
+      name: nginx-unprivileged-config
+      defaultMode: 0644
+      items:
+      - key: default.conf
+        path: default.conf
+        mode: 0644
+  - name: nginx-html
+    configMap:
+      name: nginx-unprivileged-html
+      defaultMode: 0644
+      items:
+      - key: index.html
+        path: index.html
+        mode: 0644
+  - name: tmpfs1
+    emptyDir: {}
+  - name: tmpfs2
+    emptyDir: {}
+  - name: tmpfs3
+    emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-unprivileged
+  namespace: default
+  labels:
+    app: nginx-unprivileged
+spec:
+  selector:
+    app: nginx-unprivileged
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  type: ClusterIP
+#+end_src
+
+*Note*: this example uses =volumes=, covered later.
+
+Verify that the Pod is able to serve content:
+
+#+begin_src shell
+kubectl run curl --image=curlimages/curl:latest --namespace=default --restart=Never --rm --stdin --tty -- curl nginx-unprivileged.default
+#+end_src
+
+Output:
+
+#+begin_src text
+Congratulations! You are running the unprivileged version of
+NGINX.
+
+This container does not run as the root user.
+
+Currently NGINX is listening on port 8080.
+#+end_src
+
+* Network Policies
+
+Restrict network access to applications.
+
+Example mainfest:
+
+#+begin_src yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-policy
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+  # Enforce ingress rules:
+  - Ingress
+  # Enforce egress rules:
+  - Egress
+  ingress:
+  - from:
+    # Allow ingress from applications labelled 'tier=frontend'
+    # or Namespaces labelled 'env=prod':
+    - podSelector:
+        matchLabels:
+          tier: frontend
+      namespaceSelector:
+        matchLabels:
+          env: prod
+    # Allow ingress from Namespaces labelled 'admin=utilities':
+    - namespaceSelector:
+        matchLabels:
+          admin: utilities
+    # Allow ingress from IP address '192.168.0.100/32':
+    - ipBlock:
+        cidr: 192.168.0.100/32
+    # Ingress on port '8080/TCP':
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    # Allow egress to applications labelled 'app=db':
+    - podSelector:
+        matchLabels:
+          app: db
+    # Egress to port '3306/TCP':
+    ports:
+    - protocol: TCP
+      port: 3306
+#+end_src
+
+Create the default =deny-all= network policy:
+
+#+begin_src yaml
+apiVersion: networking.k8s.io
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+#+end_src
+
+* Volumes
+
+Mount host directories in =Pods= using volumes.
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36.0
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    volumeMounts:
+    - name: my-volume
+      mountPath: /mnt
+      readOnly: false
+  volumes:
+  - name: my-volume
+    hostPath:
+      path: /srv/kubernetes/busybox
+      type: Directory
+#+end_src
+
+*Tip*: use the ~kubectl explain Pod.spec.containers.volumeMounts~ and ~kubectl explain Pod.spec.volumes~ commands to access local documentation on the =volumeMounts= and =volumes= fields respectively.
+
+* PersistentVolume
+
+A =PersistentVolume= is a piece of cluster storage that has been provisioned by an administrator (or dynamically provisioned using a =storage class=).
+
+** Create a PersistentVolume
+
+Prerequisite: create the =local-volume= storage class:
+
+#+begin_src yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-volume
+  namespace: storage
+provisioner: kubernetes.io/no-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-small
+  labels:
+    size: small
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-volume
+  local:
+    path: /mnt/storage
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node01
+#+end_src
+
+*Tip*: persistent volumes require that you reference the [[https://kubernetes.io/docs/tasks/configure-pod-container/configure-persistent-volume-storage/#create-a-persistentvolume][kubernetes.io]] documentation since no imperative command exists. You can always use the ~kubectl explain~ command to infer what fields you should use.
+
+* PersistentVolumeClaim
+
+A =PersistentVolumeClaim= is a request for storage by the user.
+
+** Create a PersistentVolumeClaim
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-claim
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+#+end_src
+
+*Tip*: =PersistentVolumes= require that you reference the [[https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims/][kubernetes.io]] documentation since no imperative command exists. You can always use the ~kubectl explain~ command to infer what fields you should use.
+
+Bind a PersistentVolumeClaim to a =Pod=:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  containers:
+  - name: busybox
+    image: docker.io/library/busybox:1.36.0
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    volumeMounts:
+    - name: my-pv
+      mountPath: /opt/data
+  volumes:
+  - name: my-pv
+    persistentVolumeClaim:
+      claimName: my-claim
+#+end_src
+
+*Optional*: delete and re-create the Pod and verify that the Volume is persistent across Pod lifecycles.
+
+* StorageClass
+
+Dynamically provision volumes based on PersistentVolumeClaims.
+
+Example manifest (using [[https://longhorn.io][Longhorn]]):
+
+#+begin_src yaml
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: longhorn
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+parameters:
+  numberOfReplicas: "3"
+  staleReplicaTimeout: "2880"
+  fromBackup: ""
+  fsType: "ext4"
+#+end_src
+
+* CNI
+
+The Container Network Interface plugin (CNI) is the core component of the Kubernetes network model.
+
+The CNI uses several canonical paths for its configuration:
+
+|----------------+---------------------|
+| Path           | Description         |
+|----------------+---------------------|
+| /etc/cni/net.d | CNI configuration.† |
+| /opt/cni/bin   | CNI binaries.       |
+|----------------+---------------------|
+
+*†* Configures the active plugin.
+
+*Note*: if the directory =/etc/cni/net.d= contains more than one plugin, only the first plugin will be used (per alphabetical order).
+
+** Linux interfaces
+
+Identify CNI interfaces by filtering network interfaces using the type =bridge=:
+
+#+begin_src shell
+ip address show type bridge
+#+end_src
+
+* Networking
+
+Identify IP subnets used by the Kubernetes network model.
+
+Obtain the CIDR for the Pod network using the =ConfigMap= for =kube-proxy=:
+
+#+begin_src shell
+kubectl get configmaps/kube-proxy --namespace=kube-system --output=yaml | grep 'clusterCIDR:' | tr --delete "\ |\n"
+#+end_src
+
+Obtain the CIDR for the Service network using the command array for the Kubernetes API server:
+
+#+begin_src shell
+kubectl get pods/kube-apiserver-$CONTROLPLANE_HOST --namespace=kube-system --output=jsonpath='{.spec.containers[0].command[*]}' | grep service-cluster-ip-range
+#+end_src
+
+Alternatively, parse the ConfigMap for =kubeadm-config= and find the values given under the =podSubnet= and =serviceSubnet= fields respectively:
+
+#+begin_src shell
+kubectl get configmaps/kubeadm-config --namespace=kube-system --output=yaml | grep --extended-regexp 'podSubnet|serviceSubnet' | tr --delete "\ "
+#+end_src
+
+Identify the type of proxy used by =kube-proxy=:
+
+#+begin_src shell
+kubectl logs pods/$KUBE_PROXY_POD --container=kube-proxy --namespace=kube-system
+#+end_src
+
+Example output:
+
+#+begin_src text
+I0805 15:24:06.839250       1 server_others.go:551] "Using iptables proxy"
+I0805 15:24:06.897186       1 server_others.go:190] "Using iptables Proxier"
+#+end_src
+
+* Ingress controller
+
+An ingress controller provides the =Ingress= resource for Kubernetes. These notes will cover the NGINX ingess controller, since it is currently maintained under the official Kubernetes [[https://github.com/kubernetes/ingress-nginx][repository]].
+
+** The NGINX ingress controller
+
+Create the directory structure:
+
+#+begin_src shell
+mkdir --parents $HOME/manifests/yaml/ingress
+#+end_src
+
+Download the manifest:
+
+#+begin_src shell
+wget --output-document $HOME/manifests/yaml/ingress/nginx-ingress-controller.yaml https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.7.0/deploy/static/provider/cloud/deploy.yaml
+#+end_src
+
+Apply the manifest:
+
+#+begin_src shell
+kubectl apply --filename=$HOME/manifests/yaml/ingress/nginx-ingress-controller.yaml
+#+end_src
+
+* Ingress
+
+The Kubernetes =Ingress= provides external access to Kubernetes services, abstracts TLS termination, facilitates load balancing and provides name-based virtual hosting, all from a single Kubernetes resource.
+
+** Create ingress rules
+
+Imperative command:
+
+#+begin_src shell
+kubectl create ingress $NAME --annotation=nginx.ingress.kubernetes.io/rewrite-target=/ --class=$CLASS --namespace=$NAMESPACE --rule="$DOMAIN_OR_SUB_DOMAIN/$PATH/*=$SERVICE:$PORT"
+#+end_src
+
+*Note*: if a wildcard suffix is appended to the URL the corresponding ingress rule will default to using =Prefix= as its =pathType=:
+
+#+begin_html
+  <style>.table table { width: 70%; }</style>
+#+end_html
+
+|----------+------------------|
+| pathType | HOST/path        |
+|----------+------------------|
+| Exact    | foo.bar.com/baz  |
+| Prefix   | foo.bar.com/baz* |
+|----------+------------------|
+
+** Fanout model
+
+Imperative command:
+
+#+begin_src shell
+kubectl create ingress $NAME --annotation=nginx.ingress.kubernetes.io/rewrite-target=/ --class=$CLASS --namespace=$NAMESPACE --rule="$DOMAIN/$PATH1=$SERVICE1:$PORT1" --rule="$DOMAIN/$PATH2/*=$SERVICE2:$PORT2" --rule="$DOMAIN/$PATH3/*=$SERVICE3:$PORT3
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-fanout
+  namespace: web
+  labels:
+    website: literate-devops.io
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: literate-devops.io
+    http:
+      paths:
+      - path: /
+        pathType: Exact
+        backend:
+          service:
+            name: literate-devops-site
+            port:
+              number: 80
+      - path: /cv
+        pathType: Prefix
+        backend:
+          service:
+            name: literate-devops-site-cv
+            port:
+              number: 80
+      - path: /kubernetes
+        pathType: Prefix
+        backend:
+          service:
+            name: literate-devops-site-k8s
+            port:
+              number: 80
+#+end_src
+
+** Name-based virtual hosts
+
+Imperative command:
+
+#+begin_src shell
+kubectl create ingress $NAME --annotation=nginx.ingress.kubernetes.io/rewrite-target=/ --class=$CLASS --namespace=$NAMESPACE --rule="$SUB_DOMAIN1/$PATH1/*=$SERVICE1:$PORT1" --rule="$SUB_DOMAIN2/$PATH2/*=$SERVICE2:$PORT2
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-vhosts
+  namespace: web
+  labels:
+    website: literate-devops.io
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: cv.literate-devops.io
+    http:
+      paths:
+      - path: "/"
+        pathType: Prefix
+        backend:
+          service:
+            name: literate-devops-site-cv
+            port:
+              number: 80
+  - host: k8s.literate-devops.io
+    http:
+      paths:
+      - path: "/"
+        pathType: Prefix
+        backend:
+          service:
+            name: literate-devops-site-k8s
+            port:
+              number: 80
+#+end_src
+
+** Ingress wildcards
+
+Imperative command:
+
+#+begin_src shell
+kubectl create ingress $NAME --annotation=nginx.ingress.kubernetes.io/rewrite-target=/ --class=$CLASS --namespace=$NAMESPACE --rule="$SUB_DOMAIN1/*=$SERVICE1:$PORT1" --rule="*.$DOMAIN/*=$SERVICE2:$PORT2"
+#+end_src
+
+Example Manifest:
+
+#+begin_src yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-wildcards
+  namespace: web
+  labels:
+    website: literate-devops.io
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: k8s.literate-devops.io
+    http:
+      paths:
+      - path: "/"
+        pathType: Prefix
+        backend:
+          service:
+            name: literate-devops-site-k8s
+            port:
+              number: 80
+  - host: "*.literate-devops.com"
+    http:
+      paths:
+      - path: "/"
+        pathType: Prefix
+        backend:
+          service:
+            name: company-site
+            port:
+              number: 80
+#+end_src
+
+* cert-manager
+
+Terminate TLS using =Ingress= and the =ClusterIssuer= resource.
+
+** Installation
+
+Install =cert-manager= to provide the ClusterIssuer resource.
+
+Create the directory structure:
+
+#+begin_src shell
+mkdir --parents $HOME/manifests/yaml/cert-manager
+#+end_src
+
+Download =cert-manager=:
+
+#+begin_src shell
+wget --output-document $HOME/manifests/yaml/cert-manager/cert-manager-v1.12.0.yaml https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
+#+end_src
+
+Apply the manifest:
+
+#+begin_src shell
+kubectl apply --filename=$HOME/manifests/yaml/cert-manager/cert-manager-v1.12.0.yaml
+#+end_src
+
+** ClusterIssuer
+
+Create a cluster-wide certificate issuing authority:
+
+#+begin_src yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    email: example@literate-devops.io # Email registed with the domain.
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+#+end_src
+
+The ClusterIssuer will issue one certificate per host when an Ingress
+resource specified the use of TLS.
+
+** TLS
+
+Terminate TLS using a Kubernetes Ingress.
+
+Imperative command:
+
+#+begin_src shell
+kubectl create ingress $NAME --annotation=cert-manager.io/cluster-issuer=letsencrypt-prod --annotation=nginx.ingress.kubernetes.io/rewrite-target=/ --class=$CLASS --namespace=$NAMESPACE --rule="$DOMAIN_OR_SUB_DOMAIN/$PATH/*=$SERVICE:$PORT,tls=$KUBERNETES_TLS_SECRET"
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-tls
+  namespace: web
+  labels:
+    website: literate-devops.io
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - literate-devops.io
+    secretName: literate-devops-certificate
+  rules:
+  - host: literate-devops.io
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: literate-devops-site
+            port:
+              number: 80
+#+end_src
+
+** ZNC
+
+Create an Ingress rule for the =znc-webui= service.
+
+Imperative command:
+
+#+begin_src shell
+kubectl create ingress ingress-znc --annotation=cert-manager.io/cluster-issuer=letsencrypt-prod --annotation=nginx.ingress.kubernetes.io/rewrite-target=/ --class=nginx --namespace=irc --rule="znc.literate-devops.io/*=znc-webui:80,tls=literate-devops-certificate"
+#+end_src
+
+Example manifest:
+
+#+begin_src yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-znc
+  namespace: irc
+  labels:
+    app: znc
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - znc.literate-devops.io
+    secretName: literate-devops-certificate
+  rules:
+  - host: znc.literate-devops.io
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: znc-webui
+            port:
+              number: 443
+#+end_src
+
+* JSONPath
+
+Filter fields using JSONPath.
+
+** CPU capacity
+
+Show the total CPU capacity per node:
+
+#+begin_src shell
+kubectl get nodes --output=jsonpath='{.items[*].metadata.name }{"\n"}{ .items[*].status.capacity.cpu}'
+#+end_src
+
+|---------------------------+--------------------+---------------------|
+| lab-cluster-control-plane | lab-cluster-worker | lab-cluster-worker2 |
+|---------------------------+--------------------+---------------------|
+|                        12 |                 12 |                  12 |
+|---------------------------+--------------------+---------------------|
+
+Show the total CPU capacity per node (with titles):
+
+#+begin_src shell
+kubectl get nodes --output=jsonpath='{"NAME"}{"\t"}{"CPU"}{"\n"}{.items[*].metadata.name}{"\t"}{.items[*].status.capacity.cpu}'
+#+end_src
+
+|------------------------------------------------------------------+----------|
+| NAME                                                             | CPU      |
+|------------------------------------------------------------------+----------|
+| lab-cluster-control-plane lab-cluster-worker lab-cluster-worker2 | 12 12 12 |
+|------------------------------------------------------------------+----------|
+
+Show the total CPU capacity per node using a loop:
+
+#+begin_src shell
+kubectl get nodes --output=jsonpath='{"NAME"}{"\t"}{"CPU"}{"\n"}{range.items[*]}{.metadata.name}{"\t"}{.status.capacity.cpu}{"\n"}{end}'
+#+end_src
+
+|---------------------------+-----|
+| NAME                      | CPU |
+|---------------------------+-----|
+| lab-cluster-control-plane |  12 |
+| lab-cluster-worker        |  12 |
+| lab-cluster-worker2       |  12 |
+|---------------------------+-----|
+
+** Container ports
+
+Create a multi-container =Pod=:
+
+#+begin_src yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx
+    image: docker.io/library/nginx:1.25.5
+    imagePullPolicy: IfNotPresent
+    ports:
+    - name: port1
+      containerPort: 80
+  - name: busybox1
+    image: docker.io/library/busybox:1.36.0
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    ports:
+    - name: port2
+      containerPort: 1234
+  - name: busybox2
+    image: docker.io/library/busybox:1.36.0
+    imagePullPolicy: IfNotPresent
+    args:
+    - "sleep"
+    - "3600"
+    ports:
+    - name: port3
+      containerPort: 2345
+#+end_src
+
+List all container =Ports= for a Pod:
+
+#+begin_src shell
+kubectl get pods/$NAME --namespace=default --output=jsonpath='{"CONTAINER"} {"PORT"}{"\n"}{range.spec.containers[*]}{.name} {.ports[*].containerPort}{"\n"}{end}'
+#+end_src
+
+|-----------+------|
+| CONTAINER | PORT |
+|-----------+------|
+| nginx     |   80 |
+| busybox1  | 1234 |
+| busybox2  | 2345 |
+|-----------+------|
+
+** Users
+
+List all users within the default =Kubeconfig= file:
+
+#+begin_src shell
+echo -n "Output: " && kubectl config view --kubeconfig=$HOME/.kube/config --output=jsonpath='{.users[*].name}'
+#+end_src
+
+Output: kind-lab-cluster
+
+** Filter predicates
+
+Show the =ready= status for the =nginx= container:
+
+#+begin_src shell
+echo -n "Ready: " && kubectl get pods/$NAME --namespace=default --output=jsonpath='{.status.containerStatuses[?(@.image == "docker.io/library/nginx:1.25.5")].ready}'
+#+end_src
+
+: Ready: true
+
+Show the =restart count= for the =busybox= container:
+
+#+begin_src shell
+kubectl get pods/$NAME --namespace=default --output=jsonpath='{"NAME"}{"\t"}{"RESTARTS"}{"\n"}{range.status.containerStatuses[?(@.image == "docker.io/library/busybox:1.36.0")]}{.name}{"\t"}{.restartCount}{"\n"}{end}'
+#+end_src
+
+|----------+----------|
+| NAME     | RESTARTS |
+|----------+----------|
+| busybox1 |        1 |
+| busybox2 |        1 |
+|----------+----------|
+
+Show all contexts for the =kind-lab-cluster= user:
+
+#+begin_src shell
+kubectl config view --kubeconfig=$HOME/.kube/config --output=jsonpath='{.contexts[?(@.context.user == "kind-lab-cluster")]}' | jq .
+#+end_src
+
+: { "context": { "cluster": "kind-lab-cluster", "user": "kind-lab-cluster" }, "name": "kind-lab-cluster" }
+
+** Custom columns (again)
+
+Customise output in columns using JSONPath syntax:
+
+#+begin_src shell
+kubectl get pods --output=custom-columns=POD:.metadata.name,CONTAINER:.spec.containers[*].name,PORT:.spec.containers[*].ports[0].containerPort
+#+end_src
+
+|--------+-----------+------|
+| POD    | CONTAINER | PORT |
+|--------+-----------+------|
+| nginx  | nginx     |   80 |
+| webapp | nginx     | 8080 |
+|--------+-----------+------|
+
+** Sorting
+
+Sort =Pod= names alphabetically:
+
+#+begin_src shell
+kubectl get pods --namespace=kube-system --output=custom-columns=NAME:.metadata.name --sort-by=.metadata.name
+#+end_src
+
+Sort Pods based on creation time:
+
+#+begin_src shell
+kubectl get pods --output=custom-columns=NAME:.metadata.name,CREATED-AT:.metadata.creationTimestamp --sort-by='{.metadata.creationTimestamp}'
+#+end_src
+
+Sort =PersistentVolumes= based on storage capacity:
+
+#+begin_src shell
+kubectl get persistentvolumes --output=custom-columns=NAME:.metadata.name,CAPACITY:.spec.capacity.storage --sort-by=.spec.capacity.storage
+#+end_src
+
+* Troubleshooting
+
+*Applications*
+
+When troubleshooting failed Kubernetes applications, walk through all objects in the stack and verify that the configuration is correct.
+
+View recent events for a Pod:
+
+#+begin_src shell
+kubectl get event --field-selector=involvedObject.name=$POD_NAME --namespace=$NAMESPACE
+#+end_src
+
+*Controlplane*
+
+Troubleshoot failed controlplane components.
+
+- Investigate system =Pods= using the ~kubectl describe~ command.
+- Check =Logs= and =Events= for failures.
+- Correct misconfiguration in manifest files.
+- View recent events:
+
+#+begin_src shell
+kubectl get event --field-selector=involvedObject.name=$POD_NAME --namespace=kube-system
+#+end_src
+
+*Node*
+
+Troubleshoot a node with the =NotReady= status.
+
+- Check Logs and Events.
+- Check CPU, memory and disk usage.
+- Check the kubelet service and ensure that it is running.
+- Check host networking.
+- Check certificates for the kubelet and ensure that none have expired:
+
+#+begin_src shell
+openssl x509 -in /var/lib/kubelet/$NAME.crt -noout -text
+#+end_src
+
+- Check the kubelet service for the presence of errors:
+
+#+begin_src shell
+journalctl --full --no-pager --unit=kubelet | grep --extended-regexp --ignore-case "ERR"
+#+end_src
+
+*Scheduler*
+
+If a Pod is in the =Pending= state then it may be a scheduler issue.
+
+- Check that the =Node= value is not equal to =<none>= when using the ~kubectl describe~ command.
+- Check the manifest configuration and run a ~kubectl describe~ on the scheduler.
+- Check taints and tolerations.
